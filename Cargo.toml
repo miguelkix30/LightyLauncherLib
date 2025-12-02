@@ -1,42 +1,58 @@
-[package]
-name = "lighty-launcher"
+[workspace]
+members = [
+    "crates/core",
+    "crates/auth",
+    "crates/java",
+    "crates/launch",
+    "crates/loaders",
+    "crates/version",
+    "crates/tauri",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.2.4"
 edition = "2021"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
-description = "A modern Minecraft launcher library supporting multiple mod loaders"
-documentation = "https://docs.rs/lighty-launcher"
-homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
-repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
-readme = "README.md"
 license = "GPL-3.0-or-later"
-keywords = ["minecraft", "launcher", "fabric", "forge", "neoforge"]
-categories = ["command-line-utilities", "development-tools", "games", "api-bindings"]
-
+repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
+homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
+documentation = "https://docs.rs/lighty-launcher"
 rust-version = "1.75"
 
-include = [
-    "examples/**/*",
-    "src/**/*",
-    "Cargo.toml",
-    "README.md",
-    "TAURI_USAGE.md",
-]
-
+[package]
+name = "lighty-launcher"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+description = "A modern Minecraft launcher library supporting multiple mod loaders"
+readme = "README.md"
+keywords = ["minecraft", "launcher", "fabric", "forge", "neoforge"]
+categories = ["command-line-utilities", "development-tools", "games", "api-bindings"]
 
 [lib]
 name = "lighty_launcher"
 path = "src/lib.rs"
 
-# Documentation features
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
-
 # ============================================
-# DÉPENDANCES - Avec Descriptif
+# WORKSPACE DEPENDENCIES
 # ============================================
 
-[dependencies]
+[workspace.dependencies]
+# Internal crates
+lighty-core = { path = "crates/core" }
+lighty-auth = { path = "crates/auth" }
+lighty-java = { path = "crates/java" }
+lighty-launch = { path = "crates/launch" }
+lighty-loaders = { path = "crates/loaders" }
+lighty-version = { path = "crates/version" }
+lighty-tauri = { path = "crates/tauri" }
+
 # ---- Async Runtime ----
 tokio = { version = "1.48", features = [
     "rt-multi-thread",  #for Runtime multi-thread
@@ -99,38 +115,62 @@ os_info = "3"
 once_cell = "1.21"
 version-compare = "0.2"
 
-# ---- Tauri (optional) ----
-tauri = { version = "2", optional = true }
+# ---- Tauri ----
+tauri = { version = "2" }
 
-
-
-# ============================================
-# DEV DEPENDENCIES - Uniquement pour tests
-# ============================================
-
-[dev-dependencies]
+# ---- Dev dependencies ----
 tokio-test = "0.4"
 tempfile = "3.23"
 criterion = { version = "0.5", features = ["html_reports"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # ============================================
+# MAIN PACKAGE DEPENDENCIES
+# ============================================
+
+[dependencies]
+# Re-export internal crates
+lighty-core = { workspace = true }
+lighty-auth = { workspace = true }
+lighty-java = { workspace = true }
+lighty-launch = { workspace = true }
+lighty-loaders = { workspace = true }
+lighty-version = { workspace = true }
+lighty-tauri = { path = "crates/tauri", optional = true }
+
+# Required for examples
+tokio = { workspace = true }
+directories = { workspace = true }
+once_cell = { workspace = true }
+tracing = { workspace = true }
+
+# ============================================
+# DEV DEPENDENCIES - Uniquement pour tests
+# ============================================
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+criterion = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# ============================================
 # FEATURES - Activation optionnelle
 # ============================================
 
 [features]
-# Loaders
-vanilla = []
-fabric = ["vanilla"]
-quilt = ["vanilla"]
-neoforge = ["vanilla"]
-forge = ["vanilla"]
-forge_legacy = ["forge"]
-lighty_updater = ["vanilla", "fabric", "quilt", "neoforge", "forge"]
-all-loaders = ["vanilla", "fabric", "quilt", "neoforge", "forge", "lighty_updater"]
+# Loaders (forwarded to lighty-loaders)
+vanilla = ["lighty-loaders/vanilla"]
+fabric = ["lighty-loaders/fabric"]
+quilt = ["lighty-loaders/quilt"]
+neoforge = ["lighty-loaders/neoforge"]
+forge = ["lighty-loaders/forge"]
+forge_legacy = ["lighty-loaders/forge_legacy"]
+lighty_updater = ["lighty-loaders/lighty_updater"]
+all-loaders = ["lighty-loaders/all-loaders"]
 
 # Tauri integration
-tauri-commands = ["dep:tauri"]
+tauri-commands = ["lighty-tauri"]
 
 default = []
 

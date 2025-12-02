@@ -2142,18 +2142,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "lighty-launcher"
+name = "lighty-auth"
+version = "0.2.4"
+dependencies = [
+ "lighty-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lighty-core"
 version = "0.2.4"
 dependencies = [
  "async-compression",
- "async-trait",
  "async_zip",
- "criterion",
  "directories",
- "futures",
  "futures-util",
- "hex",
- "memmap2",
  "once_cell",
  "os_info",
  "path-absolutize",
@@ -2161,18 +2169,141 @@ dependencies = [
  "sanitize-filename",
  "serde",
  "serde_json",
- "sha1",
- "tauri",
- "tempfile",
  "thiserror 2.0.16",
  "tokio",
  "tokio-tar",
- "tokio-test",
  "tokio-util",
  "tracing",
+ "zip",
+]
+
+[[package]]
+name = "lighty-java"
+version = "0.2.4"
+dependencies = [
+ "async-compression",
+ "directories",
+ "lighty-core",
+ "once_cell",
+ "os_info",
+ "path-absolutize",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.16",
+ "tokio",
+ "tokio-tar",
+ "tracing",
+ "zip",
+]
+
+[[package]]
+name = "lighty-launch"
+version = "0.2.4"
+dependencies = [
+ "async-trait",
+ "async_zip",
+ "directories",
+ "futures",
+ "futures-util",
+ "hex",
+ "lighty-auth",
+ "lighty-core",
+ "lighty-java",
+ "lighty-loaders",
+ "lighty-version",
+ "memmap2",
+ "once_cell",
+ "reqwest",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "sha1",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "zip",
+]
+
+[[package]]
+name = "lighty-launcher"
+version = "0.2.4"
+dependencies = [
+ "criterion",
+ "directories",
+ "lighty-auth",
+ "lighty-core",
+ "lighty-java",
+ "lighty-launch",
+ "lighty-loaders",
+ "lighty-tauri",
+ "lighty-version",
+ "once_cell",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lighty-loaders"
+version = "0.2.4"
+dependencies = [
+ "async-trait",
+ "async_zip",
+ "directories",
+ "futures",
+ "hex",
+ "lighty-core",
+ "lighty-version",
+ "memmap2",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
  "version-compare",
  "zip",
+]
+
+[[package]]
+name = "lighty-tauri"
+version = "0.2.4"
+dependencies = [
+ "directories",
+ "lighty-auth",
+ "lighty-core",
+ "lighty-java",
+ "lighty-launch",
+ "lighty-loaders",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lighty-version"
+version = "0.2.4"
+dependencies = [
+ "async-trait",
+ "directories",
+ "lighty-core",
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.16",
+ "tokio",
+ "tracing",
+ "version-compare",
 ]
 
 [[package]]
