@@ -1,0 +1,56 @@
+[package]
+name = "lighty-launch"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+description = "Minecraft launch logic for Lighty Launcher"
+
+[dependencies]
+# Workspace crates
+lighty-core = { workspace = true }
+lighty-java = { workspace = true }
+lighty-version = { workspace = true }
+lighty-loaders = { workspace = true }
+lighty-auth = { workspace = true }
+
+# Async Runtime
+tokio.workspace = true
+
+# HTTP Client
+reqwest.workspace = true
+
+# Sérialisation
+serde.workspace = true
+serde_json.workspace = true
+
+# Async Utilities
+async-trait.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Filesystem & Compression
+zip.workspace = true
+async_zip.workspace = true
+memmap2.workspace = true
+
+# Cryptographie
+sha1.workspace = true
+hex.workspace = true
+
+# Chemins & Noms de fichiers
+directories.workspace = true
+sanitize-filename.workspace = true
+
+# Utilities
+once_cell.workspace = true

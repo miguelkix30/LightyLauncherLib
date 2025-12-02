@@ -1,0 +1,41 @@
+[package]
+name = "lighty-version"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+description = "Minecraft version management for Lighty Launcher"
+
+[dependencies]
+# Workspace crates
+lighty-core = { workspace = true }
+
+# Async Runtime
+tokio.workspace = true
+
+# HTTP Client
+reqwest.workspace = true
+
+# Sérialisation
+serde.workspace = true
+serde_json.workspace = true
+
+# Async Utilities
+async-trait.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Chemins & Noms de fichiers
+directories.workspace = true
+
+# Utilities
+once_cell.workspace = true
+version-compare.workspace = true

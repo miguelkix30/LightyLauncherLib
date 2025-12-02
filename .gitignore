@@ -1,0 +1,17 @@
+# Ignore everything by default
+/*
+
+# Allow folders
+!src/
+!.github/
+!crates/
+!examples/
+
+# Allow root files
+!README.md
+!Cargo.toml
+!Cargo.lock
+!.gitignore
+
+
+

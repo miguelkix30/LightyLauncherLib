@@ -1,0 +1,43 @@
+[package]
+name = "lighty-tauri"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+description = "Tauri integration for Lighty Launcher"
+
+[dependencies]
+# Workspace crates
+lighty-core = { workspace = true }
+lighty-java = { workspace = true }
+lighty-loaders = { workspace = true }
+lighty-launch = { workspace = true }
+lighty-auth = { workspace = true }
+
+# Tauri
+tauri = { workspace = true, optional = true }
+
+# Async Runtime
+tokio.workspace = true
+
+# Sérialisation
+serde.workspace = true
+serde_json.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Utilities
+once_cell.workspace = true
+directories.workspace = true
+
+[features]
+tauri-commands = ["dep:tauri"]
+default = ["tauri-commands"]

@@ -1,0 +1,46 @@
+[package]
+name = "lighty-java"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+rust-version.workspace = true
+description = "Java runtime management for Lighty Launcher"
+
+[dependencies]
+# Workspace crates
+lighty-core = { workspace = true }
+
+# Async Runtime
+tokio.workspace = true
+
+# HTTP Client
+reqwest.workspace = true
+
+# Sérialisation
+serde.workspace = true
+serde_json.workspace = true
+
+# Error Handling
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Filesystem & Compression
+tokio-tar.workspace = true
+async-compression.workspace = true
+zip.workspace = true
+
+# Chemins & Noms de fichiers
+directories.workspace = true
+path-absolutize.workspace = true
+
+# Système & OS
+os_info.workspace = true
+
+# Utilities
+once_cell.workspace = true
