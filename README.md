@@ -1,11 +1,11 @@
 # LightyLauncher
 
-[![Crates.io](https://img.shields.io/crates/v/lighty-launcher.svg)](https://crates.io/crates/lightylauncher)
-[![Documentation](https://docs.rs/lighty-launcher/badge.svg)](https://docs.rs/lightylauncher)
+[![Crates.io](https://img.shields.io/crates/v/lighty-launcher.svg)](https://crates.io/crates/lighty-launcher)
+[![Documentation](https://docs.rs/lighty-launcher/badge.svg)](https://docs.rs/lighty-launcher)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Rust Version](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 
-> ⚠️ **ACTIVE DEVELOPMENT** - API may change between versions. Use with caution in production.
+> **ACTIVE DEVELOPMENT** - API may change between versions. Use with caution in production.
 
 A modern, async Minecraft launcher library for Rust supporting multiple mod loaders with an optimized architecture based on an intelligent caching system.
 
@@ -68,8 +68,8 @@ async fn main() {
     );
 
     match version.launch(username, uuid, JavaDistribution::Temurin).await {
-        Ok(()) => info!("✅ Launch successful!"),
-        Err(e) => error!("❌ Launch failed: {:?}", e),
+        Ok(()) => info!("Launch successful!"),
+        Err(e) => error!("Launch failed: {:?}", e),
     }
 }
 ```
@@ -92,12 +92,12 @@ fabric.launch("Player", "uuid", JavaDistribution::Temurin).await?;
 
 | Loader | Status | Example Loader Version | Example MC Version |
 |--------|--------|------------------------|-------------------|
-| **Vanilla** | ✅ Stable | - | `1.21` |
-| **Fabric** | ✅ Stable | `0.16.9` | `1.21` |
-| **Quilt** | ✅ Stable | `0.27.1` | `1.21` |
-| **NeoForge** | ⚠️ Testing | `21.1.80` | `1.21` |
-| **Forge** | ⚠️ Testing | `51.0.38` | `1.21` |
-| **OptiFine** | 🚧 Experimental | `HD_U_I9` | `1.21` |
+| **Vanilla** | Stable | - | `1.21` |
+| **Fabric** | Stable | `0.16.9` | `1.21` |
+| **Quilt** | Stable | `0.27.1` | `1.21` |
+| **NeoForge** | Testing | `21.1.80` | `1.21` |
+| **Forge** | Testing | `51.0.38` | `1.21` |
+| **OptiFine** | Experimental | `HD_U_I9` | `1.21` |
 
 ### Examples by Loader
 
@@ -161,8 +161,8 @@ LightyLauncher automatically manages Java runtime download and installation:
 
 | Distribution | Support | Recommended For | Java Versions |
 |--------------|---------|-----------------|---------------|
-| **Temurin** | ✅ | General use | 8, 11, 17, 21 |
-| **GraalVM** | ✅ | Maximum performance | 17+ |
+| **Temurin** | Supported | General use | 8, 11, 17, 21 |
+| **GraalVM** | Supported | Maximum performance | 17+ |
 
 ```rust
 // Temurin (recommended, supports Java 8-21)
@@ -236,7 +236,7 @@ await invoke('launch', {
 });
 ```
 
-📖 **Full documentation**: See [TAURI_USAGE.md](TAURI_USAGE.md)
+**Full documentation**: See [TAURI_USAGE.md](TAURI_USAGE.md)
 
 ## Cargo Features
 
@@ -268,14 +268,28 @@ lighty-launcher = { version = "0.1", features = ["all-loaders", "tauri-commands"
 ## Architecture
 
 ```
-lightylauncher/
-├── java/                   # Java runtime management
-│   ├── distribution.rs     # JRE distributions (Temurin, GraalVM)
-│   ├── jre_downloader.rs   # Download and installation
-│   └── runtime.rs          # Java version detection
+lighty-launcher/
+├── src/
+│   └── lib.rs              # Main library entry point
 │
-├── minecraft/
-│   ├── auth/               # Authentication (WIP)
+├── crates/
+│   ├── core/               # Core utilities
+│   │   ├── download.rs     # Async downloads
+│   │   ├── extract.rs      # Archive extraction
+│   │   ├── system.rs       # OS/Architecture detection
+│   │   ├── hosts.rs        # Hosts file management
+│   │   └── macros.rs       # Utility macros
+│   │
+│   ├── auth/               # Authentication
+│   │   ├── microsoft.rs    # Microsoft authentication
+│   │   ├── offline.rs      # Offline authentication
+│   │   └── azuriom.rs      # Azuriom authentication
+│   │
+│   ├── java/               # Java runtime management
+│   │   ├── distribution.rs # JRE distributions (Temurin, GraalVM)
+│   │   ├── jre_downloader.rs # Download and installation
+│   │   └── runtime.rs      # Java version detection
+│   │
 │   ├── launch/             # Launch logic
 │   │   ├── arguments.rs    # JVM and game arguments
 │   │   ├── installer.rs    # Assets/libraries installation
@@ -283,29 +297,33 @@ lightylauncher/
 │   │   └── errors.rs       # Installer errors
 │   │
 │   ├── loaders/            # Mod loader implementations
-│   │   ├── vanilla/
-│   │   ├── fabric/
-│   │   ├── quilt/
-│   │   ├── neoforge/
-│   │   ├── forge/
-│   │   └── optifine/
+│   │   ├── vanilla/        # Vanilla Minecraft
+│   │   ├── fabric/         # Fabric loader
+│   │   ├── quilt/          # Quilt loader
+│   │   ├── neoforge/       # NeoForge loader
+│   │   ├── forge/          # Forge loader
+│   │   ├── optifine/       # OptiFine
+│   │   ├── lighty_updater/ # Custom updater
+│   │   ├── utils/          # Loader utilities
+│   │   │   ├── cache.rs    # Smart cache with TTL
+│   │   │   ├── manifest.rs # Repository with dual cache
+│   │   │   ├── query.rs    # Query trait for loaders
+│   │   │   └── error.rs    # Query errors
+│   │   └── version/        # Version management
 │   │
-│   ├── utils/              # Minecraft utilities
-│   │   ├── cache.rs        # Smart cache with TTL
-│   │   ├── manifest.rs     # Repository with dual cache
-│   │   ├── query.rs        # Query trait for loaders
-│   │   └── error.rs        # Query errors
+│   ├── version/            # Version metadata
+│   │   └── version_metadata.rs
 │   │
-│   └── version/            # Version management
+│   └── tauri/              # Tauri integration
+│       ├── commands/       # Tauri commands
+│       └── core.rs         # Tauri core logic
 │
-├── utils/                  # General utilities
-│   ├── download.rs         # Async downloads
-│   ├── extract.rs          # Archive extraction
-│   ├── system.rs           # OS/Architecture detection
-│   └── macros.rs           # Utility macros
-│
-└── tauri/                  # Tauri integration
-    └── tauri_commands.rs   # Ready-to-use commands
+└── examples/               # Usage examples
+    ├── vanilla.rs
+    ├── fabric.rs
+    ├── quilt.rs
+    ├── neoforge.rs
+    └── lighty_updater.rs
 ```
 
 ### Caching System
@@ -342,9 +360,9 @@ cargo run --example forge --features forge
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| Windows | ✅ Tested | x64, ARM64 |
-| Linux | ✅ Tested | x64, ARM64 |
-| macOS | ✅ Tested | x64 (Intel), ARM64 (Apple Silicon) |
+| Windows | Tested | x64, ARM64 |
+| Linux | Tested | x64, ARM64 |
+| macOS | Tested | x64 (Intel), ARM64 (Apple Silicon) |
 
 ## Performance
 
@@ -374,14 +392,14 @@ See the [LICENSE](LICENSE) file for details.
 
 ## Links
 
-- **Documentation**: [docs.rs/lightylauncher](https://docs.rs/lightylauncher)
-- **Crates.io**: [crates.io/crates/lightylauncher](https://crates.io/crates/lightylauncher)
+- **Documentation**: [docs.rs/lighty-launcher](https://docs.rs/lighty-launcher)
+- **Crates.io**: [crates.io/crates/lighty-launcher](https://crates.io/crates/lighty-launcher)
 - **Repository**: [GitHub](https://github.com/Lighty-Launcher/LightyLauncherLib)
 - **Issues**: [GitHub Issues](https://github.com/Lighty-Launcher/LightyLauncherLib/issues)
 - **Tauri Guide**: [TAURI_USAGE.md](TAURI_USAGE.md)
 
 ---
 
-**Made with ❤️ by Hamadi**
+**Made by Hamadi**
 
-*Built with the Rust ecosystem: Tokio, Reqwest, Serde, Thiserror, and more!*
+*Built with the Rust ecosystem: Tokio, Reqwest, Serde, Thiserror, and more.*
