@@ -1,6 +1,6 @@
-use lighty_version::version_metadata::{Library, MainClass, Arguments, VersionBuilder, VersionMetaData, JavaVersion, Mods, Native, Client, AssetsFile, Asset};
+use crate::types::version_metadata::{Library, MainClass, Arguments, Version, VersionMetaData, JavaVersion, Mods, Native, Client, AssetsFile, Asset};
 use std::collections::HashMap;
-use crate::version::Version;
+use crate::types::VersionInfo;
 use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
 use once_cell::sync::Lazy;
 use super::lighty_metadata::{LightyMetadata, ServerInfo, ServersResponse};
@@ -31,13 +31,13 @@ impl Query for LightyQuery {
         "lighty_updater"
     }
 
-    async fn fetch_full_data(version: &Version) -> Result<LightyMetadata> {
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<LightyMetadata> {
         tracing::debug!("🚀 [LightyUpdater] fetch_full_data START");
-        tracing::debug!("   version.name = {}", version.name);
-        tracing::debug!("   version.loader_version = {}", version.loader_version);
+        tracing::debug!("   version.name() = {}", version.name());
+        tracing::debug!("   version.loader_version() = {}", version.loader_version());
 
         // 1. Récupérer les infos du serveur Lighty
-        let server_info_url = format!("{}/", version.loader_version);
+        let server_info_url = format!("{}/", version.loader_version());
         tracing::debug!("📡 [LightyUpdater] Fetching ServerInfo from: {}", server_info_url);
 
         let response = CLIENT.get(&server_info_url).send().await;
@@ -56,10 +56,10 @@ impl Query for LightyQuery {
         // Trouver le serveur correspondant au nom de la version
         let server_info = servers_response.servers
             .into_iter()
-            .find(|s| s.name == version.name)
+            .find(|s| s.name == version.name())
             .ok_or_else(|| {
-                tracing::error!("❌ [LightyUpdater] Server '{}' not found in servers list", version.name);
-                QueryError::VersionNotFound { version: version.name.to_string() }
+                tracing::error!("❌ [LightyUpdater] Server '{}' not found in servers list", version.name());
+                QueryError::VersionNotFound { version: version.name().to_string() }
             })?;
 
         tracing::info!(
@@ -83,31 +83,31 @@ impl Query for LightyQuery {
         Ok(manifest)
     }
 
-    async fn extract(version: &Version, query: &Self::Query, full_data: &LightyMetadata) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &LightyMetadata) -> Result<Self::Data> {
         let result = match query {
             LightyQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data)),
             LightyQuery::Arguments => VersionMetaData::Arguments(extract_arguments(full_data)),
             LightyQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
             LightyQuery::Mods => VersionMetaData::Mods(extract_mods(full_data)),
             LightyQuery::Assets => VersionMetaData::Assets(extract_assets(full_data)),
-            LightyQuery::LightyBuilder => VersionMetaData::VersionBuilder(Self::version_builder(version, full_data).await?),
+            LightyQuery::LightyBuilder => VersionMetaData::Version(Self::version_builder(version, full_data).await?),
         };
         Ok(result)
     }
 
-    async fn version_builder(version: &Version, full_data: &LightyMetadata) -> Result<VersionBuilder> {
+    async fn version_builder<V: VersionInfo>(version: &V, full_data: &LightyMetadata) -> Result<Version> {
         use super::merge_metadata::merge_metadata;
 
         tracing::debug!("🔧 [LightyUpdater] version_builder START");
 
-        let server_info_url = format!("{}/", version.loader_version);
+        let server_info_url = format!("{}/", version.loader_version());
         tracing::debug!("📡 [LightyUpdater] Re-fetching ServerInfo from: {}", server_info_url);
 
         let servers_response: ServersResponse = CLIENT.get(&server_info_url).send().await?.json().await?;
         let server_info = servers_response.servers
             .into_iter()
-            .find(|s| s.name == version.name)
-            .ok_or_else(|| QueryError::VersionNotFound { version: version.name.to_string() })?;
+            .find(|s| s.name == version.name())
+            .ok_or_else(|| QueryError::VersionNotFound { version: version.name().to_string() })?;
 
         tracing::debug!("✅ [LightyUpdater] ServerInfo for merge: loader={}", server_info.loader);
 
@@ -177,9 +177,9 @@ impl Query for LightyQuery {
 }
 
 /// Extrait le VersionBuilder depuis VersionMetaData
-pub(crate) fn extract_version_builder(data: std::sync::Arc<VersionMetaData>) -> Result<VersionBuilder> {
+pub(crate) fn extract_version_builder(data: std::sync::Arc<VersionMetaData>) -> Result<Version> {
     match data.as_ref() {
-        VersionMetaData::VersionBuilder(builder) => Ok(builder.clone()),
+        VersionMetaData::Version(builder) => Ok(builder.clone()),
         _ => Err(QueryError::InvalidMetadata),
     }
 }
@@ -192,7 +192,7 @@ fn extract_main_class(full_data: &LightyMetadata) -> MainClass {
 
 fn extract_java_version(full_data: &LightyMetadata) -> JavaVersion {
     JavaVersion {
-        major_version: full_data.java_version.major_version as u32,
+        major_version: full_data.java_version.major_version as u8,
     }
 }
 

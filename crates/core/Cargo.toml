@@ -47,3 +47,7 @@ os_info.workspace = true
 
 # Utilities
 once_cell.workspace = true
+
+# Hashing
+sha1.workspace = true
+hex.workspace = true

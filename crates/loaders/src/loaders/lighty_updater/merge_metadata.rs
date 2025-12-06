@@ -1,6 +1,5 @@
-use crate::version::Version;
-use crate::version::Loader;
-use lighty_version::version_metadata::VersionBuilder;
+use crate::types::{VersionInfo, Loader};
+use crate::types::version_metadata::Version;
 use crate::loaders::vanilla::vanilla::VANILLA;
 use crate::loaders::fabric::fabric::FABRIC;
 use crate::loaders::quilt::quilt::QUILT;
@@ -11,7 +10,7 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 
 /// Merge les métadonnées de Lighty Updater avec un autre loader
 /// selon le loader spécifié dans ServerInfo
-pub async fn merge_metadata(version: &Version<'_>, loader: &str) -> Result<VersionBuilder> {
+pub async fn merge_metadata<V: VersionInfo>(version: &V, loader: &str) -> Result<Version> {
     use super::lighty_updater::extract_version_builder;
 
     tracing::debug!("🔀 [merge_metadata] START with loader={}", loader);

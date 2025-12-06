@@ -17,12 +17,8 @@ lighty-core = { workspace = true }
 # Async Runtime
 tokio.workspace = true
 
-# HTTP Client
-reqwest.workspace = true
-
 # Sérialisation
 serde.workspace = true
-serde_json.workspace = true
 
 # Error Handling
 thiserror.workspace = true
@@ -30,17 +26,5 @@ thiserror.workspace = true
 # Logging
 tracing.workspace = true
 
-# Filesystem & Compression
-tokio-tar.workspace = true
-async-compression.workspace = true
-zip.workspace = true
-
-# Chemins & Noms de fichiers
-directories.workspace = true
+# Chemins
 path-absolutize.workspace = true
-
-# Système & OS
-os_info.workspace = true
-
-# Utilities
-once_cell.workspace = true

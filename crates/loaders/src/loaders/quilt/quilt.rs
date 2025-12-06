@@ -6,14 +6,13 @@ use std::collections::HashMap;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 
 use super::quilt_metadata::QuiltMetaData;
-use crate::version::Version;
-
+use crate::types::VersionInfo;
 
 use crate::loaders::vanilla::vanilla::VanillaQuery;
 use crate::utils::
 {query::Query, error::QueryError, manifest::ManifestRepository};
-use lighty_version::version_metadata::
-{Library, VersionMetaData, Arguments, MainClass, VersionBuilder};
+use crate::types::version_metadata::
+{Library, VersionMetaData, Arguments, MainClass, Version};
 
 
 pub static QUILT: Lazy<ManifestRepository<QuiltQuery>> = Lazy::new(|| ManifestRepository::new());
@@ -38,28 +37,28 @@ impl Query for QuiltQuery {
         "quilt"
     }
 
-    async fn fetch_full_data(version: &Version) -> Result<QuiltMetaData> {
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<QuiltMetaData> {
         let manifest_url = format!(
             "https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json",
-            version.minecraft_version, version.loader_version
+            version.minecraft_version(), version.loader_version()
         );
         tracing::debug!(url = %manifest_url, loader = "quilt", "Fetching manifest");
         let manifest: QuiltMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
         Ok(manifest)
     }
 
-    async fn extract(version: &Version, query: &Self::Query, full_data: &QuiltMetaData) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &QuiltMetaData) -> Result<Self::Data> {
         let result = match query {
             QuiltQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
             QuiltQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data).await?),
             QuiltQuery::Arguments => VersionMetaData::Arguments(extract_arguments(full_data)),
-            QuiltQuery::QuiltBuilder => VersionMetaData::VersionBuilder(Self::version_builder(version, full_data).await?),
+            QuiltQuery::QuiltBuilder => VersionMetaData::Version(Self::version_builder(version, full_data).await?),
         };
 
         Ok(result)
     }
 
-    async fn version_builder(version: &Version, full_data: &QuiltMetaData) -> Result<VersionBuilder> {
+    async fn version_builder<V: VersionInfo>(version: &V, full_data: &QuiltMetaData) -> Result<Version> {
         // Paralléliser la récupération des données Vanilla et Quilt
         let (vanilla_builder, quilt_libraries) = tokio::try_join!(
         async {
@@ -70,7 +69,7 @@ impl Query for QuiltQuery {
     )?;
 
         // Merger directement avec Vanilla en priorité
-        Ok(VersionBuilder {
+        Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
             java_version: vanilla_builder.java_version,
             arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(full_data)),

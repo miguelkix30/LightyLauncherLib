@@ -11,10 +11,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.4"
+version = "0.6.3"
 edition = "2021"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
-license = "GPL-3.0-or-later"
+license = "MIT"
 repository = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 homepage = "https://github.com/Lighty-Launcher/LightyLauncherLib"
 documentation = "https://docs.rs/lighty-launcher"
@@ -30,7 +30,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 rust-version.workspace = true
-description = "A modern Minecraft launcher library supporting multiple mod loaders"
+description = "A modern minecraft launcher library supporting multiple mod loaders fabric quilt, forge, neoforge, vanilla, and more "
 readme = "README.md"
 keywords = ["minecraft", "launcher", "fabric", "forge", "neoforge"]
 categories = ["command-line-utilities", "development-tools", "games", "api-bindings"]
@@ -45,13 +45,13 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { path = "crates/core" }
-lighty-auth = { path = "crates/auth" }
-lighty-java = { path = "crates/java" }
-lighty-launch = { path = "crates/launch" }
-lighty-loaders = { path = "crates/loaders" }
-lighty-version = { path = "crates/version" }
-lighty-tauri = { path = "crates/tauri" }
+lighty-core = { version = "0.6.2", path = "crates/core" }
+lighty-auth = { version = "0.6.2", path = "crates/auth" }
+lighty-java = { version = "0.6.2", path = "crates/java" }
+lighty-launch = { version = "0.6.2", path = "crates/launch" }
+lighty-loaders = { version = "0.6.2", path = "crates/loaders" }
+lighty-version = { version = "0.6.2", path = "crates/version" }
+lighty-tauri = { version = "0.6.2", path = "crates/tauri" }
 
 # ---- Async Runtime ----
 tokio = { version = "1.48", features = [
@@ -84,7 +84,7 @@ serde_json = "1.0"
 
 # ---- Async Utilities ----
 futures = "0.3"
-futures-util = "0.3.31"
+futures-util = { version = "0.3.31", features = ["io", "async-await-macro"] }
 async-trait = "0.1"
 
 # ---- Error Handling ----
@@ -101,6 +101,7 @@ memmap2 = "0.9"
 
 # ---- Cryptographie ----
 sha1 = "0.10"
+sha2 = "0.10"
 hex = "0.4"
 
 # ---- Chemins & Noms de fichiers ----
@@ -136,7 +137,7 @@ lighty-java = { workspace = true }
 lighty-launch = { workspace = true }
 lighty-loaders = { workspace = true }
 lighty-version = { workspace = true }
-lighty-tauri = { path = "crates/tauri", optional = true }
+lighty-tauri = { version = "0.6.2", path = "crates/tauri", optional = true }
 
 # Required for examples
 tokio = { workspace = true }

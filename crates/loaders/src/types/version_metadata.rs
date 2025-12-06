@@ -14,12 +14,12 @@ pub enum VersionMetaData {
     Assets(AssetsFile),
     Client(Client),
     Arguments(Arguments),
-    VersionBuilder(VersionBuilder),
+    Version(Version),
 }
 
-/// Structure complète (optionnelle, si tu veux récupérer tout d'un coup)
+/// Structure complète contenant toutes les métadonnées d'une version
 #[derive(Debug, Clone)]
-pub struct VersionBuilder {
+pub struct Version {
     pub main_class: MainClass,
     pub java_version: JavaVersion,
     pub arguments: Arguments,
@@ -38,7 +38,7 @@ pub struct MainClass {
 
 #[derive(Debug, Clone)]
 pub struct JavaVersion {
-    pub major_version: u32,
+    pub major_version: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

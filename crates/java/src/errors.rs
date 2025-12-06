@@ -1,10 +1,13 @@
+// Copyright (c) 2025 Hamadi
+// Licensed under the MIT License
+
 use thiserror::Error;
 
 /// Errors related to Java Runtime Environment (JRE) operations
 #[derive(Debug, Error)]
 pub enum JreError {
-    #[error("JRE not found at {path}")]
-    NotFound { path: String },
+    #[error("JRE not found at {path:?}")]
+    NotFound { path: std::path::PathBuf },
 
     #[error("Invalid JRE structure in directory")]
     InvalidStructure,
@@ -25,8 +28,8 @@ pub enum JreError {
 /// Errors related to Java runtime execution
 #[derive(Debug, Error)]
 pub enum JavaRuntimeError {
-    #[error("Java runtime not found at {path}")]
-    NotFound { path: String },
+    #[error("Java runtime not found at {path:?}")]
+    NotFound { path: std::path::PathBuf },
 
     #[error("Process exited with non-zero exit code: {code}")]
     NonZeroExit { code: i32 },
@@ -45,7 +48,16 @@ pub enum JavaRuntimeError {
 #[derive(Debug, Error)]
 pub enum DistributionError {
     #[error("Unsupported Java version {version} for distribution {distribution}")]
-    UnsupportedVersion { version: u32, distribution: String },
+    UnsupportedVersion { version: u8, distribution: &'static str },
+
+    #[error("API error for {distribution}: {error}")]
+    ApiError { distribution: &'static str, error: String },
+
+    #[error("JSON parse error for {distribution}: {error}")]
+    JsonParseError { distribution: &'static str, error: String },
+
+    #[error("No packages found for {distribution}")]
+    NoPackagesFound { distribution: &'static str },
 
     #[error("System error: {0}")]
     System(#[from] lighty_core::SystemError),

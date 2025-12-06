@@ -1,18 +1,13 @@
 use tracing::{error, info, warn, debug};
 use zip::ZipArchive;
 use async_trait::async_trait;
-use std::
-{fs::File, io::Read, path::PathBuf, collections::HashMap};
-use sha1::{Sha1, Digest};
+use std::{fs::File, io::Read, path::PathBuf, collections::HashMap};
 use once_cell::sync::Lazy;
 
-use super::neoforge_metadata::
-{NeoForgeMetaData, NeoForgeVersionMeta};
-use lighty_version::version_metadata::
-{Library, MainClass, Arguments, VersionBuilder, VersionMetaData};
-use crate::utils::
-{error::QueryError, query::Query, manifest::ManifestRepository};
-use crate::version::Version;
+use super::neoforge_metadata::{NeoForgeMetaData, NeoForgeVersionMeta};
+use crate::types::version_metadata::{Library, MainClass, Arguments, Version, VersionMetaData};
+use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
+use crate::types::VersionInfo;
 
 use crate::loaders::vanilla::vanilla::VanillaQuery;
 
@@ -26,42 +21,44 @@ pub static NEOFORGE: Lazy<ManifestRepository<NeoForgeQuery>> = Lazy::new(|| Mani
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NeoForgeQuery {
+    Libraries,
+    Arguments,
+    MainClass,
     NeoForgeBuilder,
-    //TODO: Add more queries
 }
 
 #[async_trait]
 impl Query for NeoForgeQuery {
     type Query = NeoForgeQuery;
     type Data = VersionMetaData;
-    type Raw = NeoForgeMetaData;
+    type Raw = NeoForgeMetaData ;
 
     fn name() -> &'static str {
         "neoforge"
     }
 
-    async fn fetch_full_data(version: &Version) -> Result<NeoForgeMetaData> {
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<NeoForgeMetaData> {
         // Construire l'URL de l'installer
         let installer_url = if is_old_neoforge(version) {
-            let path_version = format!("{}-{}", version.minecraft_version, version.loader_version);
-            let file_prefix = format!("forge-{}", version.minecraft_version);
+            let path_version = format!("{}-{}", version.minecraft_version(), version.loader_version());
+            let file_prefix = format!("forge-{}", version.minecraft_version());
             format!(
                 "https://maven.neoforged.net/releases/net/neoforged/forge/{}/{}-{}-installer.jar",
-                path_version, file_prefix, version.loader_version
+                path_version, file_prefix, version.loader_version()
             )
         } else {
             format!(
                 "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
-                version.loader_version, version.loader_version
+                version.loader_version(), version.loader_version()
             )
         };
 
         debug!(url = %installer_url, loader = "neoforge", "Installer URL constructed");
 
-        let profiles_dir = version.game_dirs.join(".neoforge");
+        let profiles_dir = version.game_dirs().join(".neoforge");
         mkdir!(profiles_dir);
 
-        let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version));
+        let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version()));
 
         // Vérifier et télécharger l'installer si nécessaire
         let needs_download = if installer_path.exists() {
@@ -108,16 +105,18 @@ impl Query for NeoForgeQuery {
         Ok(install_profile)
     }
 
-    async fn extract(version: &Version, query: &Self::Query, full_data: &NeoForgeMetaData) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &NeoForgeMetaData) -> Result<Self::Data> {
         let result = match query {
+            NeoForgeQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data)),
+            &NeoForgeQuery::Arguments | &NeoForgeQuery::MainClass => todo!(),
             NeoForgeQuery::NeoForgeBuilder => {
-                VersionMetaData::VersionBuilder(Self::version_builder(version, full_data).await?)
+                VersionMetaData::Version(Self::version_builder(version, full_data).await?)
             }
         };
         Ok(result)
     }
 
-    async fn version_builder(version: &Version, full_data: &NeoForgeMetaData) -> Result<VersionBuilder> {
+    async fn version_builder<V: VersionInfo>(version: &V, full_data: &NeoForgeMetaData) -> Result<Version> {
         // Paralléliser la récupération des données Vanilla et la lecture du version.json
         let (vanilla_builder, version_meta) = tokio::try_join!(
         async {
@@ -125,15 +124,15 @@ impl Query for NeoForgeQuery {
             VanillaQuery::version_builder(version, &vanilla_data).await
         },
         async {
-            let profiles_dir = version.game_dirs.join(".neoforge");
-            let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version));
+            let profiles_dir = version.game_dirs().join(".neoforge");
+            let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version()));
             let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
             Ok::<_, QueryError>(version_meta)
         }
     )?;
 
         // Merger directement avec Vanilla en priorité
-        Ok(VersionBuilder {
+        Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(&version_meta)),
             java_version: vanilla_builder.java_version,
             arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(&version_meta)),
@@ -233,8 +232,8 @@ fn extract_libraries(full_data: &NeoForgeMetaData) -> Vec<Library> {
 }
 
 /// --------- Helpers ----------
-fn is_old_neoforge(version: &Version) -> bool {
-    version_compare::compare_to(&version.minecraft_version, "1.20.1", version_compare::Cmp::Le)
+fn is_old_neoforge<V: VersionInfo>(version: &V) -> bool {
+    version_compare::compare_to(version.minecraft_version(), "1.20.1", version_compare::Cmp::Le)
         .unwrap_or(false)
 }
 
@@ -306,29 +305,6 @@ async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     }
 }
 
-/// Calcule le SHA1 d'un fichier
-fn calculate_file_sha1(path: &PathBuf) -> Result<String> {
-    let mut file = File::open(path).map_err(|e| QueryError::Conversion {
-        message: format!("Failed to open file for SHA1 calculation: {}", e)
-    })?;
-
-    let mut hasher = Sha1::new();
-    let mut buffer = [0u8; 8192];
-
-    loop {
-        let n = file.read(&mut buffer).map_err(|e| QueryError::Conversion {
-            message: format!("Failed to read file for SHA1 calculation: {}", e)
-        })?;
-
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
-    }
-
-    Ok(hex::encode(hasher.finalize()))
-}
-
 /// Vérifie le SHA1 de l'installer
 async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) -> Result<bool> {
     let expected_sha1 = fetch_maven_sha1(installer_url)
@@ -337,7 +313,8 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
             message: "Failed to fetch SHA1 from Maven".to_string()
         })?;
 
-    let actual_sha1 = calculate_file_sha1(installer_path)?;
-
-    Ok(expected_sha1.eq_ignore_ascii_case(&actual_sha1))
+    lighty_core::verify_file_sha1_sync(installer_path, &expected_sha1)
+        .map_err(|e| QueryError::Conversion {
+            message: format!("Failed to verify SHA1: {}", e)
+        })
 }

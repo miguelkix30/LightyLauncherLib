@@ -1,5 +1,5 @@
-use lighty_version::version_metadata::VersionBuilder;
-use crate::version::Version;
+use crate::types::version_metadata::Version;
+use crate::types::VersionInfo;
 use std::time::Duration;
 use crate::utils::error::QueryError;
 use async_trait::async_trait;
@@ -22,10 +22,10 @@ pub trait Query: Send + Sync {
     fn name() -> &'static str;
 
     /// Récupère le manifest brut depuis une source externe
-    async fn fetch_full_data(version: &Version) -> Result<Self::Raw>;
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<Self::Raw>;
 
     /// Transforme le manifest brut en donnée typée
-    async fn extract(version: &Version,query: &Self::Query, raw: &Self::Raw) -> Result<Self::Data>;
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, raw: &Self::Raw) -> Result<Self::Data>;
 
     /// TTL globale par défaut
     fn cache_ttl() -> Duration {
@@ -36,7 +36,7 @@ pub trait Query: Send + Sync {
     fn cache_ttl_for_query(_query: &Self::Query) -> Duration {
         Self::cache_ttl()
     }
-    async fn version_builder(version: &Version,full_data: &Self::Raw) -> Result<VersionBuilder>;
+    async fn version_builder<V: VersionInfo>(version: &V, full_data: &Self::Raw) -> Result<Version>;
 }
 
 

@@ -12,7 +12,8 @@ pub use lighty_tauri as tauri;
 // Convenience re-exports
 pub use lighty_java::JavaDistribution;
 pub use lighty_launch::launch::Launch;
-pub use lighty_loaders::{Loader, Version};
+pub use lighty_loaders::types::Loader;
+pub use lighty_version::{VersionBuilder, LightyVersionBuilder};
 
 
 

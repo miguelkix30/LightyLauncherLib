@@ -78,6 +78,23 @@ impl OperatingSystem {
         }
     }
 
+    pub fn get_zulu_name(&self) -> SystemResult<&'static str> {
+        match self {
+            OperatingSystem::WINDOWS => Ok("windows"),
+            OperatingSystem::LINUX => Ok("linux"),
+            OperatingSystem::OSX => Ok("macos"),
+            OperatingSystem::UNKNOWN => Err(SystemError::UnsupportedOS),
+        }
+    }
+
+    pub fn get_zulu_ext(&self) -> SystemResult<&'static str> {
+        match self {
+            OperatingSystem::WINDOWS => Ok("zip"),
+            OperatingSystem::LINUX | OperatingSystem::OSX => Ok("tar.gz"),
+            OperatingSystem::UNKNOWN => Err(SystemError::UnsupportedOS),
+        }
+    }
+
     pub fn get_archive_type(&self) -> SystemResult<&'static str> {
         match self {
             OperatingSystem::WINDOWS => Ok("zip"),
@@ -126,6 +143,16 @@ impl Architecture {
             Architecture::X64 => Ok("64"),
             Architecture::ARM => Ok("32"),
             Architecture::AARCH64 => Ok("64"),
+            Architecture::UNKNOWN => Err(SystemError::UnsupportedArchitecture),
+        }
+    }
+
+    pub fn get_zulu_arch(&self) -> SystemResult<&'static str> {
+        match self {
+            Architecture::X86 => Ok("i686"),
+            Architecture::X64 => Ok("x64"),
+            Architecture::ARM => Ok("arm"),
+            Architecture::AARCH64 => Ok("aarch64"),
             Architecture::UNKNOWN => Err(SystemError::UnsupportedArchitecture),
         }
     }

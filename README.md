@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/lighty-launcher.svg)](https://crates.io/crates/lighty-launcher)
 [![Documentation](https://docs.rs/lighty-launcher/badge.svg)](https://docs.rs/lighty-launcher)
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Rust Version](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 
 > **ACTIVE DEVELOPMENT** - API may change between versions. Use with caution in production.
@@ -13,14 +13,14 @@ A modern, async Minecraft launcher library for Rust supporting multiple mod load
 
 - **Multi-Loader Support**: Vanilla, Fabric, Quilt, NeoForge, Forge, OptiFine
 - **Async/Await Architecture**: Built on Tokio for maximum performance
-- **Automatic Java Management**: Download and manage JRE distributions (Temurin, GraalVM)
+- **Automatic Java Management**: Download and manage JRE distributions (Temurin, GraalVM, Zulu, Liberica)
 - **Smart Caching System**: Dual cache (raw + query) with configurable TTL and automatic cleanup
 - **Tauri Integration**: Pre-configured commands for desktop applications
 - **Cross-Platform**: Windows, Linux, and macOS support
 - **Type-Safe**: Strongly typed API with comprehensive error handling via `thiserror`
 - **Performance Optimized**:
   - Parallel downloads with concurrency limits
-  - SHA1 verification for file integrity
+  - File size verification for download integrity
   - Async archive extraction
   - Intelligent cache reuse
 
@@ -157,26 +157,37 @@ optifine.launch(username, uuid, JavaDistribution::Temurin).await?;
 
 ## Java Distributions
 
-LightyLauncher automatically manages Java runtime download and installation:
+LightyLauncher automatically manages Java runtime download and installation with support for 4 major distributions:
 
-| Distribution | Support | Recommended For | Java Versions |
-|--------------|---------|-----------------|---------------|
-| **Temurin** | Supported | General use | 8, 11, 17, 21 |
-| **GraalVM** | Supported | Maximum performance | 17+ |
+| Distribution | Support | Type | Recommended For | Java Versions | Size (Java 21 x64) |
+|--------------|---------|------|-----------------|---------------|-------------------|
+| **Temurin** | ✅ Supported | JRE | General use, best compatibility | 8, 11, 17, 21+ | ~42 MB |
+| **GraalVM** | ✅ Supported | JDK | Maximum performance | 17+ only | ~303 MB |
+| **Zulu** | ✅ Supported | JRE | Enterprise support available | 8, 11, 17, 21+ | ~82 MB |
+| **Liberica** | ✅ Supported | JRE | Lightweight alternative | 8, 11, 17, 21+ | ~50 MB |
 
 ```rust
-// Temurin (recommended, supports Java 8-21)
+// Temurin (recommended, supports all Java versions)
 JavaDistribution::Temurin
 
-// GraalVM (high performance, Java 17+ only)
+// GraalVM (high performance, Java 17+ only, JDK distribution)
 JavaDistribution::GraalVM
+
+// Zulu (reliable alternative with enterprise support)
+JavaDistribution::Zulu
+
+// Liberica (lightweight, good for resource-constrained systems)
+JavaDistribution::Liberica
 ```
 
 The library automatically:
 - Detects the required Java version for each Minecraft version
-- Downloads the JRE if not present
-- Verifies SHA1 checksums
+- Downloads the appropriate JRE/JDK if not present
+- Verifies download integrity via Content-Length headers
 - Extracts and configures the runtime
+- Uses public APIs from each vendor (Adoptium, Oracle, Azul, Foojay)
+
+**Note**: GraalVM only provides JDK distributions (no separate JRE), which is why it's larger but offers maximum performance through advanced optimizations.
 
 ## Tauri Integration
 
@@ -286,7 +297,15 @@ lighty-launcher/
 │   │   └── azuriom.rs      # Azuriom authentication
 │   │
 │   ├── java/               # Java runtime management
-│   │   ├── distribution.rs # JRE distributions (Temurin, GraalVM)
+│   │   ├── distribution/   # JRE distributions (Temurin, GraalVM, Zulu, Liberica)
+│   │   │   ├── mod.rs      # Distribution types and main API
+│   │   │   ├── api_models.rs # API response structures
+│   │   │   ├── utils.rs    # Shared utilities (file size verification)
+│   │   │   └── providers/  # Individual distribution providers
+│   │   │       ├── temurin.rs   # Adoptium Temurin provider
+│   │   │       ├── graalvm.rs   # Oracle GraalVM provider
+│   │   │       ├── zulu.rs      # Azul Zulu provider
+│   │   │       └── liberica.rs  # BellSoft Liberica provider
 │   │   ├── jre_downloader.rs # Download and installation
 │   │   └── runtime.rs      # Java version detection
 │   │
@@ -380,8 +399,10 @@ LightyLauncher is optimized for performance:
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0 or later**.
+This project is licensed under the **MIT License**.
 See the [LICENSE](LICENSE) file for details.
+
+**Clean Room Implementation**: The Java distribution management system was implemented from scratch using only publicly documented APIs from Adoptium, Oracle, Azul, and Foojay. This ensures full MIT license compatibility.
 
 ## Disclaimer
 

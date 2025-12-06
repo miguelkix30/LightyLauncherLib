@@ -1,4 +1,4 @@
-use lighty_launcher::{JavaDistribution, Launch, Loader, Version};
+use lighty_launcher::{JavaDistribution, Launch, Loader, VersionBuilder};
 use directories::ProjectDirs;
 use once_cell::sync::Lazy;
 use tracing::{info, error};
@@ -17,7 +17,7 @@ async fn main() {
     let uuid = "37fefc81-1e26-4d31-a988-74196affc99b";
 
 
-    let mut quilt = Version::new("quilt", Loader::Quilt, "0.17.10", "1.18.2",&LAUNCHER_DIRECTORY);
+    let mut quilt = VersionBuilder::new("quilt", Loader::Quilt, "0.17.10", "1.18.2",&LAUNCHER_DIRECTORY);
 
 
     match quilt.launch(username, uuid, JavaDistribution::Temurin).await {

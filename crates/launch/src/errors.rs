@@ -10,12 +10,15 @@ pub enum InstallerError {
     Http(#[from] reqwest::Error),
 
     #[error("SHA1 verification failed: {0}")]
-    Sha1(#[from] lighty_loaders::utils::sha1::Sha1Error),
+    Sha1(#[from] lighty_core::HashError),
+
+    #[error("Query error: {0}")]
+    Query(#[from] lighty_loaders::utils::error::QueryError),
 
     #[error("Loader not supported: {0}")]
     UnsupportedLoader(String),
 
-    #[error("Invalid metadata: expected VersionBuilder")]
+    #[error("Invalid metadata: expected Version")]
     InvalidMetadata,
 
     #[error("Missing required field: {0}")]

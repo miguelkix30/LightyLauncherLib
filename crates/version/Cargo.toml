@@ -13,6 +13,7 @@ description = "Minecraft version management for Lighty Launcher"
 [dependencies]
 # Workspace crates
 lighty-core = { workspace = true }
+lighty-loaders = { workspace = true }
 
 # Async Runtime
 tokio.workspace = true

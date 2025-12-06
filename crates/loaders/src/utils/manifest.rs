@@ -1,7 +1,7 @@
-use crate::version::Version;
 use crate::utils::error::QueryError;
 use crate::utils::query::{Query, QueryKey};
 use crate::utils::cache::Cache;
+use crate::types::VersionInfo;
 use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
@@ -21,9 +21,9 @@ impl<F: Query> ManifestRepository<F> {
         }
     }
 
-    async fn get_cached_version_data(&self, version: &Version<'_>) -> Result<Arc<<F as Query>::Raw>> {
+    async fn get_cached_version_data<V: VersionInfo>(&self, version: &V) -> Result<Arc<<F as Query>::Raw>> {
         let ttl = F::cache_ttl();
-        let key = version.name.to_string();
+        let key = version.name().to_string();
 
         let data = self
             .raw_version_cache
@@ -38,13 +38,13 @@ impl<F: Query> ManifestRepository<F> {
         Ok(data)
     }
 
-    pub async fn get(
+    pub async fn get<V: VersionInfo>(
         &self,
-        version: &Version<'_>,
+        version: &V,
         query: F::Query,
     ) -> Result<Arc<F::Data>> {
         let key = QueryKey {
-            version: version.name.to_string(),
+            version: version.name().to_string(),
             query: query.clone(),
         };
 

@@ -1,21 +1,21 @@
-use lighty_version::version_metadata::VersionBuilder;
-use lighty_loaders::version::Version;
+use lighty_loaders::types::version_metadata::Version;
+use lighty_loaders::types::VersionInfo;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-pub trait Arguments<'a> {
+pub trait Arguments {
     fn build_arguments(
         &self,
-        builder: &VersionBuilder,
+        builder: &Version,
         username: &str,
         uuid: &str,
     ) -> Vec<String>;
 }
 
-impl<'a> Arguments<'a> for Version<'a> {
+impl<T: VersionInfo> Arguments for T {
     fn build_arguments(
         &self,
-        builder: &VersionBuilder,
+        builder: &Version,
         username: &str,
         uuid: &str,
     ) -> Vec<String> {
@@ -67,9 +67,9 @@ impl<'a> Arguments<'a> for Version<'a> {
 }
 
 /// Crée la HashMap avec toutes les variables de lancement
-fn create_variable_map<'a>(
-    version: &Version<'a>,
-    builder: &VersionBuilder,
+fn create_variable_map<T: VersionInfo>(
+    version: &T,
+    builder: &Version,
     username: &str,
     uuid: &str,
 ) -> HashMap<String, String> {
@@ -90,20 +90,20 @@ fn create_variable_map<'a>(
         map.insert("user_properties".to_string(), "{}".to_string());
 
         // Version
-        map.insert("version_name".to_string(), version.name.to_string());
+        map.insert("version_name".to_string(), version.name().to_string());
         map.insert("version_type".to_string(), "release".to_string());
 
         // Directories
-        map.insert("game_directory".to_string(), version.game_dirs.display().to_string());
-        map.insert("assets_root".to_string(), version.game_dirs.join("assets").display().to_string());
-        map.insert("natives_directory".to_string(), version.game_dirs.join("natives").display().to_string());
-        map.insert("library_directory".to_string(), version.game_dirs.join("libraries").display().to_string());
+        map.insert("game_directory".to_string(), version.game_dirs().display().to_string());
+        map.insert("assets_root".to_string(), version.game_dirs().join("assets").display().to_string());
+        map.insert("natives_directory".to_string(), version.game_dirs().join("natives").display().to_string());
+        map.insert("library_directory".to_string(), version.game_dirs().join("libraries").display().to_string());
 
         // Assets index
         let assets_index_name = builder.assets_index
             .as_ref()
             .map(|idx| idx.id.clone())
-            .unwrap_or_else(|| version.minecraft_version.to_string());
+            .unwrap_or_else(|| version.minecraft_version().to_string());
         map.insert("assets_index_name".to_string(), assets_index_name);
 
         // Launcher
@@ -119,13 +119,13 @@ fn create_variable_map<'a>(
 }
 
 /// Construit le classpath à partir des libraries
-fn build_classpath<'a>(version: &Version<'a>, libraries: &[lighty_version::version_metadata::Library]) -> String {
+fn build_classpath<T: VersionInfo>(version: &T, libraries: &[lighty_loaders::types::version_metadata::Library]) -> String {
         #[cfg(target_os = "windows")]
         let separator = ";";
         #[cfg(not(target_os = "windows"))]
         let separator = ":";
 
-        let lib_dir = version.game_dirs.join("libraries");
+        let lib_dir = version.game_dirs().join("libraries");
 
         let mut classpath_entries: Vec<String> = libraries
             .iter()
@@ -138,7 +138,7 @@ fn build_classpath<'a>(version: &Version<'a>, libraries: &[lighty_version::versi
 
         // Ajouter le client.jar à la fin
         classpath_entries.push(
-            version.game_dirs.join(format!("{}.jar", version.name)).display().to_string()
+            version.game_dirs().join(format!("{}.jar", version.name())).display().to_string()
         );
 
         classpath_entries.join(separator)

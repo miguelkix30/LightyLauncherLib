@@ -1,5 +1,5 @@
-use lighty_version::version_metadata::{ Library, MainClass, Arguments, VersionBuilder, VersionMetaData};
-use crate::version::Version;
+use crate::types::version_metadata::{ Library, MainClass, Arguments, Version, VersionMetaData};
+use crate::types::VersionInfo;
 use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
 use crate::loaders::vanilla::{vanilla::VanillaQuery};
 use once_cell::sync::Lazy;
@@ -31,10 +31,10 @@ impl Query for FabricQuery {
         "fabric"
     }
 
-    async fn fetch_full_data(version: &Version) -> Result<FabricMetaData> {
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<FabricMetaData> {
         let manifest_url = format!(
             "https://meta.fabricmc.net/v2/versions/loader/{}/{}/profile/json",
-            version.minecraft_version, version.loader_version
+            version.minecraft_version(), version.loader_version()
         );
         tracing::debug!(url = %manifest_url, loader = "fabric", "Fetching manifest");
         let manifest: FabricMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
@@ -42,17 +42,17 @@ impl Query for FabricQuery {
         Ok(manifest)
     }
 
-    async fn extract(version: &Version, query: &Self::Query, full_data: &FabricMetaData) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &FabricMetaData) -> Result<Self::Data> {
         let result = match query {
             FabricQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data).await?),
             FabricQuery::Arguments => VersionMetaData::Arguments(extract_arguments(full_data)),
             FabricQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
-            FabricQuery::FabricBuilder => VersionMetaData::VersionBuilder(Self::version_builder(version, full_data).await?),
+            FabricQuery::FabricBuilder => VersionMetaData::Version(Self::version_builder(version, full_data).await?),
         };
         Ok(result)
     }
 
-    async fn version_builder(version: &Version, full_data: &FabricMetaData) -> Result<VersionBuilder> {
+    async fn version_builder<V: VersionInfo>(version: &V, full_data: &FabricMetaData) -> Result<Version> {
         let (vanilla_builder, fabric_libraries) = tokio::try_join!(
         async {
             let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
@@ -62,7 +62,7 @@ impl Query for FabricQuery {
     )?;
 
         // Merger directement avec Vanilla en priorité
-        Ok(VersionBuilder {
+        Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
             java_version: vanilla_builder.java_version,
             arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(full_data)),

@@ -1,7 +1,7 @@
 use crate::commands::utils::parse::{parse_java_distribution, parse_loader};
 use crate::core::{AppState, LaunchConfig, LaunchResult, VersionConfig};
 use lighty_launch::launch::Launch;
-use lighty_loaders::Version;
+use lighty_version::VersionBuilder as Version;
 
 #[tauri::command]
 pub async fn launch(

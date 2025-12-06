@@ -13,7 +13,6 @@ description = "Minecraft mod loaders support for Lighty Launcher"
 [dependencies]
 # Workspace crates
 lighty-core = { workspace = true }
-lighty-version = { workspace = true }
 
 # Async Runtime
 tokio.workspace = true
@@ -39,10 +38,6 @@ tracing.workspace = true
 zip.workspace = true
 async_zip.workspace = true
 memmap2.workspace = true
-
-# Cryptographie
-sha1.workspace = true
-hex.workspace = true
 
 # Chemins & Noms de fichiers
 directories.workspace = true

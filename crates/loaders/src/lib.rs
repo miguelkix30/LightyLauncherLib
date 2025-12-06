@@ -1,6 +1,6 @@
 pub mod loaders;
 pub mod utils;
-pub mod version;
+pub mod types;
 
 // Re-export commonly used items
 pub use loaders::{
@@ -8,11 +8,8 @@ pub use loaders::{
 };
 
 pub use utils::{
-    cache, error, manifest, query, sha1,
+    cache, error, manifest, query,
 };
 
-// Re-export version types
-pub use version::{Version, Loader, VersionResult};
-
-// Re-export version_metadata from lighty_version
-pub use lighty_version::version_metadata;
+// Re-export types
+pub use types::{Loader, LoaderExtensions, VersionInfo, version_metadata};

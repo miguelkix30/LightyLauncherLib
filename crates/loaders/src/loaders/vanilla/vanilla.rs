@@ -2,18 +2,17 @@ use async_trait::async_trait;
 use tracing::{error, info, warn};
 use once_cell::sync::Lazy;
 use std::time::Duration;
-use lighty_core::mkdir;
-use crate::utils::sha1::verify_file_sha1;
+use lighty_core::{mkdir, verify_file_sha1};
 use lighty_core::system::{ARCHITECTURE, OS};
 use crate::utils::error::QueryError;
 use crate::utils::manifest::ManifestRepository;
 use crate::utils::query::Query;
 use super::vanilla_metadata::{PistonMetaManifest, VanillaAssetFile,VanillaMetaData,Rule};
-use lighty_version::version_metadata::
+use crate::types::version_metadata::
 {VersionMetaData,JavaVersion, Library, MainClass,Native,Client,AssetIndex,Asset, Arguments,
- VersionBuilder, AssetsFile
+ Version, AssetsFile
 };
-use crate::version::Version;
+use crate::types::VersionInfo;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
@@ -56,7 +55,7 @@ impl Query for VanillaQuery {
     //     }
     // }
 
-    async fn fetch_full_data(version: &Version) -> Result<VanillaMetaData> {
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<VanillaMetaData> {
         let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
         info!("Fetching manifest from {}", manifest_url);
 
@@ -65,9 +64,9 @@ impl Query for VanillaQuery {
         let version_info = manifest
             .versions
             .iter()
-            .find(|v| v.id == version.minecraft_version)
+            .find(|v| v.id == version.minecraft_version())
             .ok_or_else(|| QueryError::VersionNotFound {
-                version: version.minecraft_version.clone()
+                version: version.minecraft_version().to_string()
             })?;
 
         let vanilla_metadata: VanillaMetaData = CLIENT.get(&version_info.url).send().await?.json().await?;
@@ -75,7 +74,7 @@ impl Query for VanillaQuery {
         Ok(vanilla_metadata)
     }
 
-    async fn extract(version : &Version, query: &Self::Query, full_data: &Self::Raw) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &Self::Raw) -> Result<Self::Data> {
         let result = match query {
             VanillaQuery::JavaVersion => VersionMetaData::JavaVersion(extract_java_version(full_data)),
             VanillaQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
@@ -85,14 +84,14 @@ impl Query for VanillaQuery {
             VanillaQuery::Assets => VersionMetaData::Assets(extract_assets(version,full_data).await?),
             VanillaQuery::Client => VersionMetaData::Client(extract_client(version, full_data)?),
             VanillaQuery::Arguments => VersionMetaData::Arguments(extract_arguments(full_data)),
-            VanillaQuery::VanillaBuilder => VersionMetaData::VersionBuilder(Self::version_builder(version, full_data).await?),
+            VanillaQuery::VanillaBuilder => VersionMetaData::Version(Self::version_builder(version, full_data).await?),
         };
 
         Ok(result)
     }
 
-    async fn version_builder(version: &Version, full_data: &VanillaMetaData) -> Result<VersionBuilder> {
-        Ok(VersionBuilder {
+    async fn version_builder<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> Result<Version> {
+        Ok(Version {
             main_class: extract_main_class(full_data),
             java_version: extract_java_version(full_data),
             arguments: extract_arguments(full_data),
@@ -208,7 +207,7 @@ fn should_apply_rules(rules: &[Rule], os_name: &str) -> bool {
 fn extract_java_version(full_data: &VanillaMetaData) -> JavaVersion {
     full_data.java_version
         .as_ref()
-        .map(|v| JavaVersion { major_version: v.major_version })
+        .map(|v| JavaVersion { major_version: v.major_version as u8 })
         .unwrap_or_else(|| {
             // For very old Minecraft versions (<1.17), java_version is not specified
             // Default to Java 8 which is compatible with legacy versions
@@ -234,11 +233,11 @@ fn extract_assets_index(full_data: &VanillaMetaData) -> AssetIndex {
     }
 }
 
-async fn extract_assets(version: &Version<'_>, full_data: &VanillaMetaData) -> Result<AssetsFile> {
+async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> Result<AssetsFile> {
     let asset_index = &full_data.asset_index;
 
     // Créer le dossier assets/indexes
-    let indexes_dir = version.game_dirs.join("assets").join("indexes");
+    let indexes_dir = version.game_dirs().join("assets").join("indexes");
     mkdir!(indexes_dir);
 
     // Chemin du fichier index (ex: assets/indexes/1.7.10.json ou 26.json)
@@ -316,13 +315,13 @@ async fn extract_assets(version: &Version<'_>, full_data: &VanillaMetaData) -> R
     Ok(AssetsFile { objects })
 }
 
-fn extract_client(version: &Version, full_data: &VanillaMetaData) -> Result<Client> {
+fn extract_client<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> Result<Client> {
     full_data.downloads.client
         .as_ref()
         .map(|client| Client {
             name: "client".to_string(),
             url: Some(client.url.clone()),
-            path: Some(format!("{}.jar", version.name)),
+            path: Some(format!("{}.jar", version.name())),
             sha1: Some(client.sha1.clone()),
             size: Some(client.size),
         })

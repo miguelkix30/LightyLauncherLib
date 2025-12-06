@@ -1,5 +1,5 @@
 //NOT FINISHED
-use lighty_launcher::{JavaDistribution, Launch, Loader, Version};
+use lighty_launcher::{JavaDistribution, Launch, Loader, VersionBuilder};
 use directories::ProjectDirs;
 use once_cell::sync::Lazy;
 use tracing::{info, error};
@@ -18,7 +18,7 @@ async fn main() {
     let uuid = "37fefc81-1e26-4d31-a988-74196affc99b";
 
 
-    let  mut neoforge = Version::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2",&LAUNCHER_DIRECTORY);
+    let  mut neoforge = VersionBuilder::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2",&LAUNCHER_DIRECTORY);
 
 
     match neoforge.launch(username, uuid, JavaDistribution::Temurin).await {
