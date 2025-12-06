@@ -45,23 +45,23 @@ lighty-loaders/
     │       ├── lighty_updater.rs
     │       ├── lighty_metadata.rs
     │       └── merge_metadata.rs
+    ├── types/                  # Common types
+    │   ├── mod.rs              # Type declarations
+    │   └── version_metadata.rs # Version metadata structures
     ├── utils/                  # Utilities
+    │   ├── mod.rs
     │   ├── cache.rs            # Dual cache system
     │   ├── error.rs            # Error types
     │   ├── manifest.rs         # Manifest repository
-    │   ├── query.rs            # Query trait
-    │   └── sha1.rs             # SHA1 verification
-    └── version/                # Version management
-        ├── mod.rs
-        ├── version.rs          # Version struct
-        └── macro_version.rs    # Version macros
+    │   └── query.rs            # Query trait
+    └── lib.rs                  # Main exports
 ```
 
 ## Usage
 
 ```toml
 [dependencies]
-lighty-loaders = { version = "0.6.2", features = ["all-loaders"] }
+lighty-loaders = { version = "0.6.3", features = ["all-loaders"] }
 ```
 
 ```rust
@@ -161,10 +161,10 @@ Control which loaders are compiled:
 
 ```toml
 # All loaders
-lighty-loaders = { version = "0.6.2", features = ["all-loaders"] }
+lighty-loaders = { version = "0.6.3", features = ["all-loaders"] }
 
 # Specific loaders
-lighty-loaders = { version = "0.6.2", features = ["vanilla", "fabric", "quilt"] }
+lighty-loaders = { version = "0.6.3", features = ["vanilla", "fabric", "quilt"] }
 ```
 
 Available features:
@@ -191,7 +191,7 @@ Each cache features:
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 

@@ -16,7 +16,7 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 
 ```toml
 [dependencies]
-lighty-auth = "0.6.2"
+lighty-auth = "0.6.3"
 ```
 
 ```rust
@@ -85,7 +85,7 @@ use lighty_auth::azuriom::AzuriomAuth;
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 

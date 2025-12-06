@@ -18,7 +18,7 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 
 ```toml
 [dependencies]
-lighty-core = "0.6.2"
+lighty-core = "0.6.3"
 ```
 
 ```rust
@@ -51,6 +51,7 @@ lighty-core/
     ├── extract.rs      # Archive extraction (ZIP, TAR, TAR.GZ)
     ├── system.rs       # OS and architecture detection
     ├── hosts.rs        # HTTP client with custom user agent
+    ├── hash.rs         # Hash utilities (SHA1, SHA256 verification)
     ├── errors.rs       # Error types (DownloadError, ExtractError, SystemError)
     └── macros.rs       # Utility macros
 ```
@@ -66,7 +67,7 @@ lighty-core/
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 

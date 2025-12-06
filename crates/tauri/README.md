@@ -39,9 +39,9 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "0.6.2", features = ["tauri-commands"] }
+lighty-launcher = { version = "0.6.3", features = ["tauri-commands"] }
 # or directly
-lighty-tauri = "0.6.2"
+lighty-tauri = "0.6.3"
 ```
 
 ### Backend Setup
@@ -165,7 +165,7 @@ For complete integration guide, see [TAURI_USAGE.md](https://github.com/Lighty-L
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 

@@ -9,7 +9,7 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 ## Features
 
 - **Automatic JRE Download**: Download and install Java runtimes on demand
-- **Multiple Distributions**: Support for Temurin and GraalVM
+- **Multiple Distributions**: Support for Temurin, GraalVM, Zulu, and Liberica
 - **Version Detection**: Detect required Java version for Minecraft
 - **Cross-Platform**: Windows, Linux, and macOS support
 
@@ -17,7 +17,7 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 
 ```toml
 [dependencies]
-lighty-java = "0.6.2"
+lighty-java = "0.6.3"
 ```
 
 ```rust
@@ -45,7 +45,15 @@ async fn main() {
 lighty-java/
 └── src/
     ├── lib.rs              # Module declarations and re-exports
-    ├── distribution.rs     # JavaDistribution enum (Temurin, GraalVM)
+    ├── distribution/       # Java distribution providers
+    │   ├── mod.rs          # Distribution types and main API
+    │   ├── api_models.rs   # API response structures
+    │   ├── utils.rs        # Shared utilities
+    │   └── providers/      # Individual distribution providers
+    │       ├── temurin.rs  # Adoptium Temurin provider
+    │       ├── graalvm.rs  # Oracle GraalVM provider
+    │       ├── zulu.rs     # Azul Zulu provider
+    │       └── liberica.rs # BellSoft Liberica provider
     ├── jre_downloader.rs   # Download and install JRE
     ├── runtime.rs          # Java version detection and validation
     └── errors.rs           # Error types for Java operations
@@ -79,6 +87,32 @@ let distribution = JavaDistribution::GraalVM;
 **Supported Versions**: 17, 21
 **Best for**: Modern Minecraft versions (1.17+), maximum performance
 
+### Zulu
+
+Azul Zulu - OpenJDK builds with enterprise support available.
+
+```rust
+use lighty_java::JavaDistribution;
+
+let distribution = JavaDistribution::Zulu;
+```
+
+**Supported Versions**: 8, 11, 17, 21
+**Best for**: Enterprise environments, certified builds
+
+### Liberica
+
+BellSoft Liberica - Lightweight OpenJDK distribution.
+
+```rust
+use lighty_java::JavaDistribution;
+
+let distribution = JavaDistribution::Liberica;
+```
+
+**Supported Versions**: 8, 11, 17, 21
+**Best for**: Resource-constrained systems, lightweight deployments
+
 ## Platform Support
 
 | Platform | Architectures | Status |
@@ -89,7 +123,7 @@ let distribution = JavaDistribution::GraalVM;
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 

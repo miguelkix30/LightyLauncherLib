@@ -17,7 +17,7 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 
 ```toml
 [dependencies]
-lighty-launch = "0.6.2"
+lighty-launch = "0.6.3"
 ```
 
 ```rust
@@ -45,7 +45,10 @@ lighty-launch/
 └── src/
     ├── lib.rs          # Module declarations
     ├── launch.rs       # Launch trait and implementation
-    ├── installer.rs    # Assets and libraries installation
+    ├── installer/      # Assets and libraries installation
+    │   ├── mod.rs      # Installer trait
+    │   ├── assets.rs   # Assets installation
+    │   └── libraries.rs # Libraries installation
     ├── arguments.rs    # JVM and game arguments generation
     └── errors.rs       # Error types (InstallerError, InstallerResult)
 ```
@@ -121,7 +124,7 @@ match version.launch(username, uuid, java_dist).await {
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 

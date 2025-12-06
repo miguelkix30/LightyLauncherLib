@@ -18,15 +18,17 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 ```
 lighty-version/
 └── src/
-    ├── lib.rs              # Module declarations and re-exports
-    └── version_metadata.rs # VersionMetaData, VersionBuilder, and related types
+    ├── lib.rs                  # Module declarations and re-exports
+    ├── version_builder.rs      # Version builder pattern
+    ├── lighty_builder.rs       # LightyUpdater builder
+    └── loader_extensions_impl.rs # Loader-specific extensions
 ```
 
 ## Usage
 
 ```toml
 [dependencies]
-lighty-version = "0.6.2"
+lighty-version = "0.6.3"
 ```
 
 ```rust
@@ -87,7 +89,7 @@ let metadata: &VersionMetaData = version.get_metadata();
 
 ## License
 
-GPL-3.0-or-later
+MIT
 
 ## Links
 
