@@ -111,3 +111,33 @@ pub fn verify_file_sha1_sync(path: &Path, expected_sha1: &str) -> HashResult<boo
     let calculated_sha1 = calculate_file_sha1_sync(path)?;
     Ok(calculated_sha1.eq_ignore_ascii_case(expected_sha1))
 }
+
+/// Calculates the SHA1 hash of arbitrary bytes
+///
+/// Useful for hashing strings, usernames, or any data in memory.
+///
+/// # Arguments
+/// * `data` - The bytes to hash
+///
+/// # Returns
+/// The SHA1 hash as a lowercase hex string
+pub fn calculate_sha1_bytes(data: &[u8]) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize())
+}
+
+/// Calculates the SHA1 hash of arbitrary bytes and returns raw hash bytes
+///
+/// Useful when you need the raw hash bytes instead of hex string.
+///
+/// # Arguments
+/// * `data` - The bytes to hash
+///
+/// # Returns
+/// The SHA1 hash as raw bytes (20 bytes)
+pub fn calculate_sha1_bytes_raw(data: &[u8]) -> [u8; 20] {
+    let mut hasher = Sha1::new();
+    hasher.update(data);
+    hasher.finalize().into()
+}

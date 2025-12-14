@@ -5,7 +5,6 @@
 
 use std::path::PathBuf;
 use tokio::fs;
-use tracing::warn;
 use lighty_core::verify_file_sha1;
 
 /// Verifies if a file exists and matches the expected SHA1 hash
@@ -20,7 +19,7 @@ pub async fn needs_download(path: &PathBuf, sha1: Option<&String>, name: &str) -
         match verify_file_sha1(path, hash).await {
             Ok(true) => false,
             _ => {
-                warn!("[Installer] SHA1 mismatch for {}, re-downloading...", name);
+                lighty_core::trace_warn!("[Installer] SHA1 mismatch for {}, re-downloading...", name);
                 let _ = fs::remove_file(path).await;
                 true
             }

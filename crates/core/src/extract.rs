@@ -9,6 +9,9 @@ use tokio::io::AsyncBufRead;
 use tokio::io::{AsyncRead, AsyncSeek, BufReader};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+#[cfg(feature = "events")]
+use lighty_event::{EventBus, Event, CoreEvent};
+
 // Maximum file size: 2GB (protection against zip bombs)
 const MAX_FILE_SIZE: u64 = 2 * 1024 * 1024 * 1024;
 // Buffer size for extraction: 256KB
@@ -22,7 +25,11 @@ const BUFFER_SIZE: usize = 256 * 1024;
 /// - Absolute path rejection
 /// - File size limits (2GB max)
 /// - Path sanitization
-pub async fn zip_extract<R>(archive: R, out_dir: &Path) -> ExtractResult<()>
+pub async fn zip_extract<R>(
+    archive: R,
+    out_dir: &Path,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> ExtractResult<()>
 where
     R: AsyncRead + AsyncSeek + Unpin + AsyncBufRead,
 {
@@ -30,6 +37,15 @@ where
     let mut reader = ZipFileReader::new(archive.compat()).await?;
 
     let entries_count = reader.file().entries().len();
+
+    #[cfg(feature = "events")]
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Core(CoreEvent::ExtractionStarted {
+            archive_type: "ZIP".to_string(),
+            file_count: entries_count,
+            destination: out_dir.to_string_lossy().to_string(),
+        }));
+    }
 
     for index in 0..entries_count {
         // Collect entry metadata before mutably borrowing reader
@@ -95,7 +111,27 @@ where
             // Copy with buffering for performance
             io::copy(buffered_reader, &mut file.compat_write()).await?;
         }
+
+        // Emit progress event every 10 files
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            if (index + 1) % 10 == 0 || (index + 1) == entries_count {
+                bus.emit(Event::Core(CoreEvent::ExtractionProgress {
+                    files_extracted: index + 1,
+                    total_files: entries_count,
+                }));
+            }
+        }
     }
+
+    #[cfg(feature = "events")]
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Core(CoreEvent::ExtractionCompleted {
+            archive_type: "ZIP".to_string(),
+            files_extracted: entries_count,
+        }));
+    }
+
     Ok(())
 }
 
@@ -106,7 +142,11 @@ where
 /// - Symlink/hardlink rejection
 /// - Absolute path rejection
 /// - File size limits (2GB max)
-pub async fn tar_gz_extract<R>(archive: R, out_dir: &Path) -> ExtractResult<()>
+pub async fn tar_gz_extract<R>(
+    archive: R,
+    out_dir: &Path,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> ExtractResult<()>
 where
     R: AsyncRead + Unpin,
 {
@@ -114,8 +154,19 @@ where
     let decoder = GzipDecoder::new(BufReader::new(archive));
     let mut ar = tokio_tar::Archive::new(decoder);
 
+    #[cfg(feature = "events")]
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Core(CoreEvent::ExtractionStarted {
+            archive_type: "TAR.GZ".to_string(),
+            file_count: 0, // Unknown for tar.gz until we iterate
+            destination: out_dir.to_string_lossy().to_string(),
+        }));
+    }
+
     // Manual extraction with validation
     let mut entries = ar.entries()?;
+    let mut files_extracted = 0usize;
+
     while let Some(entry) = entries.next().await {
         let mut entry = entry?;
         let path = entry.path()?.to_path_buf();
@@ -149,6 +200,27 @@ where
 
         // Extract safely
         entry.unpack(&dest).await?;
+
+        files_extracted += 1;
+
+        // Emit progress event every 10 files
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            if files_extracted % 10 == 0 {
+                bus.emit(Event::Core(CoreEvent::ExtractionProgress {
+                    files_extracted,
+                    total_files: 0, // Unknown for tar.gz
+                }));
+            }
+        }
+    }
+
+    #[cfg(feature = "events")]
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Core(CoreEvent::ExtractionCompleted {
+            archive_type: "TAR.GZ".to_string(),
+            files_extracted,
+        }));
     }
 
     Ok(())

@@ -7,22 +7,22 @@
 
 > **ACTIVE DEVELOPMENT** - API may change between versions. Use with caution in production.
 
-A modern, async Minecraft launcher library for Rust supporting multiple mod loaders with an optimized architecture based on an intelligent caching system.
+A modern, modular Minecraft launcher library for Rust with full async support, real-time event system, and automatic Java management.
+
+![LightyUpdater Banner](img/banner.png)
 
 ## Features
 
-- **Multi-Loader Support**: Vanilla, Fabric, Quilt, NeoForge, Forge, OptiFine
-- **Async/Await Architecture**: Built on Tokio for maximum performance
+- **Modular Architecture**: Organized into logical namespaces (`auth`, `event`, `java`, `launch`, `loaders`, `version`, `core`)
+- **Multi-Loader Support**: Vanilla, Fabric, Quilt, NeoForge, Forge, OptiFine, LightyUpdater
+- **Event System**: Real-time progress tracking for all operations (downloads, installations, authentication)
+- **Authentication**: Offline, Microsoft OAuth 2.0, Azuriom CMS + trait-based extensibility for custom providers
 - **Automatic Java Management**: Download and manage JRE distributions (Temurin, GraalVM, Zulu, Liberica)
-- **Smart Caching System**: Dual cache (raw + query) with configurable TTL and automatic cleanup
-- **Tauri Integration**: Pre-configured commands for desktop applications
+- **Async/Await**: Built on Tokio for maximum performance
+- **Smart Caching**: Dual cache (raw + query) with configurable TTL
+- **Type-Safe**: Strongly typed API with comprehensive error handling
 - **Cross-Platform**: Windows, Linux, and macOS support
-- **Type-Safe**: Strongly typed API with comprehensive error handling via `thiserror`
-- **Performance Optimized**:
-  - Parallel downloads with concurrency limits
-  - File size verification for download integrity
-  - Async archive extraction
-  - Intelligent cache reuse
+- **Performance Optimized**: Parallel downloads, async I/O, minimal dependencies
 
 ## Installation
 
@@ -30,379 +30,584 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "0.1", features = ["all-loaders"] }
-tokio = { version = "1.48", features = ["full"] }
+lighty-launcher = { version = "0.6", features = ["vanilla", "events"] }
+tokio = { version = "1", features = ["full"] }
 directories = "6.0"
 once_cell = "1.21"
 tracing-subscriber = "0.3"
+anyhow = "1.0"
 ```
 
 ## Quick Start
 
-### Basic Example - Vanilla
+### Basic Example - Vanilla Minecraft
 
 ```rust
-use lighty_launcher::{JavaDistribution, Launch, Loader, Version};
+use lighty_launcher::{
+    auth::{OfflineAuth, Authenticator},
+    java::JavaDistribution,
+    launch::Launch,
+    loaders::Loader,
+    version::VersionBuilder,
+};
 use directories::ProjectDirs;
 use once_cell::sync::Lazy;
-use tracing::{info, error};
 
-static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> = Lazy::new(|| {
+static LAUNCHER_DIR: Lazy<ProjectDirs> = Lazy::new(|| {
     ProjectDirs::from("com", "MyLauncher", "")
         .expect("Failed to create project directories")
 });
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let username = "PlayerName";
-    let uuid = "37fefc81-1e26-4d31-a988-74196affc99b";
+    // Authenticate
+    let mut auth = OfflineAuth::new("PlayerName");
+    let profile = auth.authenticate().await?;
 
-    let mut version = Version::new(
-        "vanilla-1.21",
+    // Create version instance
+    let mut version = VersionBuilder::new(
+        "vanilla-1.21.1",
         Loader::Vanilla,
         "",
-        "1.21",
-        &LAUNCHER_DIRECTORY
+        "1.21.1",
+        &LAUNCHER_DIR
     );
 
-    match version.launch(username, uuid, JavaDistribution::Temurin).await {
-        Ok(()) => info!("Launch successful!"),
-        Err(e) => error!("Launch failed: {:?}", e),
+    // Launch the game
+    version.launch(&profile, JavaDistribution::Temurin)
+        .run()
+        .await?;
+
+    Ok(())
+}
+```
+
+### Using the Prelude
+
+For convenience, import commonly used types:
+
+```rust
+use lighty_launcher::prelude::*;
+use directories::ProjectDirs;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let launcher_dir = ProjectDirs::from("com", "MyLauncher", "").unwrap();
+
+    let mut auth = OfflineAuth::new("Player");
+    let profile = auth.authenticate().await?;
+
+    let mut version = VersionBuilder::new(
+        "my-instance",
+        Loader::Vanilla,
+        "",
+        "1.21.1",
+        &launcher_dir
+    );
+
+    version.launch(&profile, JavaDistribution::Temurin)
+        .run()
+        .await?;
+
+    Ok(())
+}
+```
+
+## Modules
+
+LightyLauncher is organized into logical modules, each with its own namespace:
+
+### `lighty_launcher::auth` - Authentication
+
+Multiple authentication methods with a unified, extensible interface:
+
+```rust
+use lighty_launcher::auth::{OfflineAuth, MicrosoftAuth, AzuriomAuth, Authenticator};
+
+// Offline (no network required)
+let mut auth = OfflineAuth::new("Player");
+let profile = auth.authenticate().await?;
+
+// Microsoft OAuth 2.0
+let mut auth = MicrosoftAuth::new();
+let profile = auth.authenticate().await?;
+
+// Azuriom CMS
+let mut auth = AzuriomAuth::new("https://example.com");
+let profile = auth.authenticate().await?;
+```
+
+**Custom Authentication:**
+
+Implement the `Authenticator` trait to create your own provider:
+
+```rust
+use lighty_launcher::auth::{Authenticator, UserProfile, UserRole, AuthResult};
+
+pub struct MyCustomAuth {
+    api_url: String,
+}
+
+impl Authenticator for MyCustomAuth {
+    async fn authenticate(
+        &mut self,
+        #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    ) -> AuthResult<UserProfile> {
+        // Your custom logic here
+        Ok(UserProfile {
+            username: "Player".to_string(),
+            uuid: "uuid-here".to_string(),
+            access_token: Some("token".to_string()),
+            role: UserRole::User,
+        })
     }
 }
 ```
 
-### Fabric Example
+**Key Types:**
+- `OfflineAuth` - Offline authentication (UUID v5 generation)
+- `MicrosoftAuth` - Microsoft/Xbox Live OAuth 2.0
+- `AzuriomAuth` - Azuriom CMS integration
+- `Authenticator` - Trait for creating custom authentication providers
+- `UserProfile` - User data (username, UUID, access token)
+- `generate_offline_uuid()` - Helper to create deterministic UUIDs
+
+### `lighty_launcher::event` - Event System
+
+Real-time progress tracking for all launcher operations:
 
 ```rust
-let mut fabric = Version::new(
-    "fabric-1.21",
+use lighty_launcher::event::{EventBus, Event, LaunchEvent, AuthEvent, JavaEvent};
+
+// Create event bus
+let event_bus = EventBus::new(1000);
+let mut receiver = event_bus.subscribe();
+
+// Listen to events
+tokio::spawn(async move {
+    while let Ok(event) = receiver.next().await {
+        match event {
+            Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
+                println!("Downloaded {} bytes", bytes);
+            }
+            Event::Java(JavaEvent::JavaDownloadStarted { distribution, version, total_bytes }) => {
+                println!("Downloading {} {} ({} MB)", distribution, version, total_bytes / 1_000_000);
+            }
+            _ => {}
+        }
+    }
+});
+
+// Use with authentication
+let profile = auth.authenticate(Some(&event_bus)).await?;
+
+// Use with launch
+version.launch(&profile, JavaDistribution::Temurin)
+    .with_event_bus(&event_bus)
+    .run()
+    .await?;
+```
+
+**Event Types:**
+- `AuthEvent` - Authentication progress
+- `JavaEvent` - JRE download/extraction
+- `LaunchEvent` - Installation/launch progress
+- `LoaderEvent` - Loader metadata fetching
+- `CoreEvent` - Archive extraction
+
+See [crates/event/README.md](crates/event/README.md) for complete documentation.
+
+### `lighty_launcher::java` - Java Management
+
+Automatic Java runtime download and installation:
+
+```rust
+use lighty_launcher::java::{JavaDistribution, JavaRuntime};
+
+// Distributions are automatically managed
+JavaDistribution::Temurin   // Recommended, supports all Java versions
+JavaDistribution::GraalVM    // High performance, Java 17+ only
+JavaDistribution::Zulu       // Enterprise support available
+JavaDistribution::Liberica   // Lightweight alternative
+```
+
+**Supported Distributions:**
+
+| Distribution | Java Versions | Type | Size (Java 21) | Best For |
+|--------------|---------------|------|----------------|----------|
+| Temurin | 8, 11, 17, 21+ | JRE | ~42 MB | General use, best compatibility |
+| GraalVM | 17+ only | JDK | ~303 MB | Maximum performance |
+| Zulu | 8, 11, 17, 21+ | JRE | ~82 MB | Enterprise support |
+| Liberica | 8, 11, 17, 21+ | JRE | ~50 MB | Lightweight |
+
+### `lighty_launcher::launch` - Game Launching
+
+Complete launch orchestration with customization options:
+
+```rust
+use lighty_launcher::launch::{Launch, LaunchBuilder, DownloaderConfig, init_downloader_config};
+use lighty_launcher::launch::keys::*;
+
+// Configure downloader (optional)
+init_downloader_config(DownloaderConfig {
+    max_concurrent_downloads: 100,
+    max_retries: 5,
+    initial_delay_ms: 50,
+});
+
+// Launch with custom JVM options and arguments
+version.launch(&profile, JavaDistribution::Temurin)
+    .with_jvm_options()
+        .set("Xmx", "4G")
+        .set("Xms", "2G")
+        .done()
+    .with_arguments()
+        .set(KEY_LAUNCHER_NAME, "MyCustomLauncher")
+        .set("width", "1920")
+        .set("height", "1080")
+        .done()
+    .run()
+    .await?;
+```
+
+**Key Features:**
+- JVM options customization (memory, GC, system properties)
+- Game arguments customization (resolution, launcher name)
+- Automatic file verification
+- Parallel downloads with retry logic
+- Asset, library, and native management
+
+### `lighty_launcher::loaders` - Mod Loaders
+
+Support for multiple Minecraft mod loaders:
+
+```rust
+use lighty_launcher::loaders::{Loader, VersionInfo};
+
+// Available loaders
+Loader::Vanilla       // Vanilla Minecraft
+Loader::Fabric        // Fabric mod loader
+Loader::Quilt         // Quilt mod loader
+Loader::NeoForge      // NeoForge (modern Forge fork)
+Loader::Forge         // Forge
+Loader::LightyUpdater // Custom updater system
+Loader::Optifine      // OptiFine (experimental)
+```
+
+**Loader Status:**
+
+| Loader | Status | Example Version | Minecraft Version |
+|--------|--------|-----------------|-------------------|
+| Vanilla | ✅ Stable | - | 1.21.1 |
+| Fabric | ✅ Stable | 0.17.2 | 1.21.8 |
+| Quilt | ✅ Stable | 0.17.10 | 1.18.2 |
+| NeoForge | ⚠️ Testing | 20.2.93 | 1.20.2 |
+| Forge | ⚠️ Testing | - | - |
+| LightyUpdater | ✅ Stable | - | Custom |
+| OptiFine | 🧪 Experimental | - | - |
+
+### `lighty_launcher::version` - Version Builders
+
+Build game instances with different loaders:
+
+```rust
+use lighty_launcher::version::{VersionBuilder, LightyVersionBuilder};
+
+// Standard Minecraft with loader
+let mut version = VersionBuilder::new(
+    "fabric-instance",
     Loader::Fabric,
-    "0.16.9",      // Fabric loader version
-    "1.21",        // Minecraft version
-    &LAUNCHER_DIRECTORY
+    "0.17.2",       // Loader version
+    "1.21.8",       // Minecraft version
+    &launcher_dir
 );
 
-fabric.launch("Player", "uuid", JavaDistribution::Temurin).await?;
+// LightyUpdater custom version
+let mut version = LightyVersionBuilder::new(
+    "custom-instance",
+    "https://my-server.com/api",
+    &launcher_dir
+);
 ```
 
-## Supported Loaders
+### `lighty_launcher::core` - Core Utilities
 
-| Loader | Status | Example Loader Version | Example MC Version |
-|--------|--------|------------------------|-------------------|
-| **Vanilla** | Stable | - | `1.21` |
-| **Fabric** | Stable | `0.16.9` | `1.21` |
-| **Quilt** | Stable | `0.27.1` | `1.21` |
-| **NeoForge** | Testing | `21.1.80` | `1.21` |
-| **Forge** | Testing | `51.0.38` | `1.21` |
-| **OptiFine** | Experimental | `HD_U_I9` | `1.21` |
-
-### Examples by Loader
-
-<details>
-<summary><b>Vanilla</b></summary>
+Low-level utilities for system operations:
 
 ```rust
-let mut vanilla = Version::new("vanilla-1.21", Loader::Vanilla, "", "1.21", &LAUNCHER_DIRECTORY);
-vanilla.launch(username, uuid, JavaDistribution::Temurin).await?;
-```
-</details>
+use lighty_launcher::core::{hash, extract, download, system};
 
-<details>
-<summary><b>Fabric</b></summary>
+// SHA1 verification
+core::verify_file_sha1(&path, expected_hash).await?;
+
+// Archive extraction
+core::extract::zip_extract(reader, output_dir, None).await?;
+
+// System detection
+let (os, arch) = core::system::get_os_arch();
+```
+
+## Examples
+
+### Fabric with Events
 
 ```rust
-let mut fabric = Version::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21", &LAUNCHER_DIRECTORY);
-fabric.launch(username, uuid, JavaDistribution::Temurin).await?;
-```
-</details>
+use lighty_launcher::{
+    auth::{OfflineAuth, Authenticator},
+    event::{EventBus, Event, LaunchEvent},
+    java::JavaDistribution,
+    launch::Launch,
+    loaders::Loader,
+    version::VersionBuilder,
+};
 
-<details>
-<summary><b>Quilt</b></summary>
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let launcher_dir = ProjectDirs::from("com", "MyLauncher", "").unwrap();
 
-```rust
-let mut quilt = Version::new("quilt-1.21", Loader::Quilt, "0.27.1", "1.21", &LAUNCHER_DIRECTORY);
-quilt.launch(username, uuid, JavaDistribution::Temurin).await?;
-```
-</details>
+    // Create event bus
+    let event_bus = EventBus::new(1000);
+    let mut receiver = event_bus.subscribe();
 
-<details>
-<summary><b>NeoForge</b></summary>
+    // Spawn event listener
+    tokio::spawn(async move {
+        while let Ok(event) = receiver.next().await {
+            match event {
+                Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
+                    println!("Downloaded {} bytes", bytes);
+                }
+                Event::Launch(LaunchEvent::InstallCompleted { version, .. }) => {
+                    println!("{} installation completed!", version);
+                }
+                _ => {}
+            }
+        }
+    });
 
-```rust
-let mut neoforge = Version::new("neoforge-1.21", Loader::NeoForge, "21.1.80", "1.21", &LAUNCHER_DIRECTORY);
-neoforge.launch(username, uuid, JavaDistribution::GraalVM).await?;
-```
-</details>
+    // Authenticate with events
+    let mut auth = OfflineAuth::new("Player");
+    let profile = auth.authenticate(Some(&event_bus)).await?;
 
-<details>
-<summary><b>Forge</b></summary>
+    // Launch with events
+    let mut version = VersionBuilder::new(
+        "fabric-1.21.8",
+        Loader::Fabric,
+        "0.17.2",
+        "1.21.8",
+        &launcher_dir
+    );
 
-```rust
-let mut forge = Version::new("forge-1.21", Loader::Forge, "51.0.38", "1.21", &LAUNCHER_DIRECTORY);
-forge.launch(username, uuid, JavaDistribution::Temurin).await?;
-```
-</details>
+    version.launch(&profile, JavaDistribution::Temurin)
+        .with_event_bus(&event_bus)
+        .run()
+        .await?;
 
-<details>
-<summary><b>OptiFine</b></summary>
-
-```rust
-let mut optifine = Version::new("optifine-1.21", Loader::Optifine, "HD_U_I9", "1.21", &LAUNCHER_DIRECTORY);
-optifine.launch(username, uuid, JavaDistribution::Temurin).await?;
-```
-</details>
-
-## Java Distributions
-
-LightyLauncher automatically manages Java runtime download and installation with support for 4 major distributions:
-
-| Distribution | Support | Type | Recommended For | Java Versions | Size (Java 21 x64) |
-|--------------|---------|------|-----------------|---------------|-------------------|
-| **Temurin** | ✅ Supported | JRE | General use, best compatibility | 8, 11, 17, 21+ | ~42 MB |
-| **GraalVM** | ✅ Supported | JDK | Maximum performance | 17+ only | ~303 MB |
-| **Zulu** | ✅ Supported | JRE | Enterprise support available | 8, 11, 17, 21+ | ~82 MB |
-| **Liberica** | ✅ Supported | JRE | Lightweight alternative | 8, 11, 17, 21+ | ~50 MB |
-
-```rust
-// Temurin (recommended, supports all Java versions)
-JavaDistribution::Temurin
-
-// GraalVM (high performance, Java 17+ only, JDK distribution)
-JavaDistribution::GraalVM
-
-// Zulu (reliable alternative with enterprise support)
-JavaDistribution::Zulu
-
-// Liberica (lightweight, good for resource-constrained systems)
-JavaDistribution::Liberica
-```
-
-The library automatically:
-- Detects the required Java version for each Minecraft version
-- Downloads the appropriate JRE/JDK if not present
-- Verifies download integrity via Content-Length headers
-- Extracts and configures the runtime
-- Uses public APIs from each vendor (Adoptium, Oracle, Azul, Foojay)
-
-**Note**: GraalVM only provides JDK distributions (no separate JRE), which is why it's larger but offers maximum performance through advanced optimizations.
-
-## Tauri Integration
-
-LightyLauncher provides ready-to-use Tauri commands for desktop applications.
-
-### Installation
-
-```toml
-[dependencies]
-lighty-launcher = { version = "0.1", features = ["all-loaders", "tauri-commands"] }
-```
-
-### Backend Setup
-
-```rust
-// src-tauri/src/lib.rs
-use lighty_launcher::tauri::tauri_commands::*;
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-  let _app_state = AppState::new(
-    "fr".to_string(),
-    "Polar".to_string(),
-    "".to_string()
-  );
-
-  tauri::Builder::default()
-          .invoke_handler(tauri::generate_handler![
-            launch,
-            get_loaders,
-            get_java_distributions,
-            get_launcher_path,
-            check_version_exists,
-        ])
-          .run(tauri::generate_context!())
-          .expect("error");
+    Ok(())
 }
 ```
 
-### Frontend Usage (TypeScript)
+### Microsoft Authentication
 
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+```rust
+use lighty_launcher::auth::{MicrosoftAuth, Authenticator};
 
-await invoke('launch', {
-  versionConfig: {
-    name: 'fabric-1.21',
-    loader: 'fabric',
-    loaderVersion: '0.16.9',
-    minecraftVersion: '1.21',
-  },
-  launchConfig: {
-    username: 'Hamadi',
-    uuid: '37fefc81-1e26-4d31-a988-74196affc99b',
-    javaDistribution: 'temurin',
-  },
-});
+let mut auth = MicrosoftAuth::new();
+
+// Interactive OAuth flow
+let profile = auth.authenticate().await?;
+
+println!("Logged in as: {}", profile.username);
+println!("UUID: {}", profile.uuid);
 ```
 
-**Full documentation**: See [TAURI_USAGE.md](TAURI_USAGE.md)
+### Custom Downloader Configuration
+
+```rust
+use lighty_launcher::launch::{init_downloader_config, DownloaderConfig};
+
+// Configure before launching
+init_downloader_config(DownloaderConfig {
+    max_concurrent_downloads: 150,  // More parallel downloads
+    max_retries: 10,                 // More retry attempts
+    initial_delay_ms: 100,           // Longer initial delay
+});
+
+// Launches will use this configuration
+version.launch(&profile, JavaDistribution::Temurin).run().await?;
+```
 
 ## Cargo Features
 
-Control which loaders are compiled into your binary:
+Control which functionality is compiled:
 
 ```toml
-# All loaders
-lighty-launcher = { version = "0.1", features = ["all-loaders"] }
+# Minimal - Vanilla only
+lighty-launcher = { version = "0.6", features = ["vanilla"] }
 
-# Specific loaders only
-lighty-launcher = { version = "0.1", features = ["vanilla", "fabric"] }
+# With events
+lighty-launcher = { version = "0.6", features = ["vanilla", "events"] }
+
+# Multiple loaders
+lighty-launcher = { version = "0.6", features = ["vanilla", "fabric", "quilt", "events"] }
+
+# All loaders
+lighty-launcher = { version = "0.6", features = ["all-loaders", "events"] }
 
 # With Tauri integration
-lighty-launcher = { version = "0.1", features = ["all-loaders", "tauri-commands"] }
+lighty-launcher = { version = "0.6", features = ["all-loaders", "events", "tauri-commands"] }
 ```
 
-**Available features**:
-- `vanilla` - Vanilla Minecraft support (base for all loaders)
-- `fabric` - Fabric loader support
-- `quilt` - Quilt loader support
-- `neoforge` - NeoForge loader support
-- `forge` - Forge loader support
-- `forge_legacy` - Forge Legacy support (1.7.10 - 1.12.2)
-- `all-loaders` - Enable all mod loaders
-- `tauri-commands` - Pre-configured Tauri commands
+**Available Features:**
+- `vanilla` - Vanilla Minecraft support (required base)
+- `fabric` - Fabric loader
+- `quilt` - Quilt loader
+- `neoforge` - NeoForge loader
+- `forge` - Forge loader
+- `forge_legacy` - Legacy Forge (1.7.10 - 1.12.2)
+- `lighty_updater` - Custom updater system
+- `all-loaders` - All mod loaders
+- `events` - Event system
+- `tauri-commands` - Tauri desktop integration
 
-**Default features**: None (choose your loaders)
+## Running Examples
+
+```bash
+# Vanilla
+cargo run --example vanilla --features vanilla,events
+
+# Vanilla with events (detailed progress)
+cargo run --example vanilla_with_events --features vanilla,events
+
+# Fabric
+cargo run --example fabric --features fabric
+
+# Quilt
+cargo run --example quilt --features quilt
+
+# LightyUpdater
+cargo run --example lighty_updater --features lighty_updater
+```
 
 ## Architecture
 
 ```
 lighty-launcher/
 ├── src/
-│   └── lib.rs              # Main library entry point
+│   └── lib.rs                    # Module organization and re-exports
 │
 ├── crates/
-│   ├── core/               # Core utilities
-│   │   ├── download.rs     # Async downloads
-│   │   ├── extract.rs      # Archive extraction
-│   │   ├── system.rs       # OS/Architecture detection
-│   │   ├── hosts.rs        # Hosts file management
-│   │   └── macros.rs       # Utility macros
+│   ├── auth/                     # Authentication
+│   │   ├── offline.rs            # Offline auth
+│   │   ├── microsoft.rs          # Microsoft OAuth
+│   │   ├── azuriom.rs            # Azuriom CMS
+│   │   └── custom.rs             # Custom endpoints
 │   │
-│   ├── auth/               # Authentication
-│   │   ├── microsoft.rs    # Microsoft authentication
-│   │   ├── offline.rs      # Offline authentication
-│   │   └── azuriom.rs      # Azuriom authentication
+│   ├── event/                    # Event system
+│   │   ├── lib.rs                # EventBus, EventReceiver
+│   │   ├── errors.rs             # Custom errors
+│   │   └── module/               # Event definitions
+│   │       ├── auth.rs           # AuthEvent
+│   │       ├── java.rs           # JavaEvent
+│   │       ├── launch.rs         # LaunchEvent
+│   │       ├── loader.rs         # LoaderEvent
+│   │       └── core.rs           # CoreEvent
 │   │
-│   ├── java/               # Java runtime management
-│   │   ├── distribution/   # JRE distributions (Temurin, GraalVM, Zulu, Liberica)
-│   │   │   ├── mod.rs      # Distribution types and main API
-│   │   │   ├── api_models.rs # API response structures
-│   │   │   ├── utils.rs    # Shared utilities (file size verification)
-│   │   │   └── providers/  # Individual distribution providers
-│   │   │       ├── temurin.rs   # Adoptium Temurin provider
-│   │   │       ├── graalvm.rs   # Oracle GraalVM provider
-│   │   │       ├── zulu.rs      # Azul Zulu provider
-│   │   │       └── liberica.rs  # BellSoft Liberica provider
-│   │   ├── jre_downloader.rs # Download and installation
-│   │   └── runtime.rs      # Java version detection
+│   ├── java/                     # Java runtime management
+│   │   ├── distribution.rs       # Distribution providers
+│   │   ├── jre_downloader.rs     # Download & install
+│   │   └── runtime.rs            # Version detection
 │   │
-│   ├── launch/             # Launch logic
-│   │   ├── arguments.rs    # JVM and game arguments
-│   │   ├── installer.rs    # Assets/libraries installation
-│   │   ├── launch.rs       # Launch trait
-│   │   └── errors.rs       # Installer errors
+│   ├── launch/                   # Game launching
+│   │   ├── arguments/            # Argument building
+│   │   │   └── arguments.rs      # Arguments trait
+│   │   ├── installer/            # Installation logic
+│   │   │   ├── installer.rs      # Installer trait
+│   │   │   ├── config.rs         # Downloader config
+│   │   │   ├── assets.rs         # Asset management
+│   │   │   ├── libraries.rs      # Library management
+│   │   │   ├── natives.rs        # Native libraries
+│   │   │   └── client.rs         # Client JAR
+│   │   └── launch/               # Launch orchestration
+│   │       ├── runner.rs         # Launch logic
+│   │       ├── builder.rs        # LaunchBuilder
+│   │       └── config.rs         # LaunchConfig
 │   │
-│   ├── loaders/            # Mod loader implementations
-│   │   ├── vanilla/        # Vanilla Minecraft
-│   │   ├── fabric/         # Fabric loader
-│   │   ├── quilt/          # Quilt loader
-│   │   ├── neoforge/       # NeoForge loader
-│   │   ├── forge/          # Forge loader
-│   │   ├── optifine/       # OptiFine
-│   │   ├── lighty_updater/ # Custom updater
-│   │   ├── utils/          # Loader utilities
-│   │   │   ├── cache.rs    # Smart cache with TTL
-│   │   │   ├── manifest.rs # Repository with dual cache
-│   │   │   ├── query.rs    # Query trait for loaders
-│   │   │   └── error.rs    # Query errors
-│   │   └── version/        # Version management
+│   ├── loaders/                  # Mod loaders
+│   │   ├── vanilla/              # Vanilla Minecraft
+│   │   ├── fabric/               # Fabric
+│   │   ├── quilt/                # Quilt
+│   │   ├── neoforge/             # NeoForge
+│   │   ├── forge/                # Forge
+│   │   ├── lighty_updater/       # Custom updater
+│   │   └── utils/                # Caching & utilities
 │   │
-│   ├── version/            # Version metadata
-│   │   └── version_metadata.rs
+│   ├── version/                  # Version builders
+│   │   ├── version_builder.rs    # Standard builder
+│   │   └── lighty_builder.rs     # LightyUpdater builder
 │   │
-│   └── tauri/              # Tauri integration
-│       ├── commands/       # Tauri commands
-│       └── core.rs         # Tauri core logic
+│   └── core/                     # Core utilities
+│       ├── system.rs             # OS/Arch detection
+│       ├── hosts.rs              # HTTP client
+│       ├── download.rs           # Download utilities
+│       ├── extract.rs            # Archive extraction
+│       └── hash.rs               # SHA1 verification
 │
-└── examples/               # Usage examples
+└── examples/                     # Usage examples
     ├── vanilla.rs
+    ├── vanilla_with_events.rs
     ├── fabric.rs
     ├── quilt.rs
     ├── neoforge.rs
     └── lighty_updater.rs
 ```
 
-### Caching System
+## Performance
 
-LightyLauncher uses a **dual cache architecture** for optimal performance:
+- **Async I/O**: All filesystem and network operations are async
+- **Parallel Downloads**: Configurable concurrency (default: 50 concurrent)
+- **Smart Caching**: Dual cache system with TTL
+- **Event System**: Zero-cost when disabled via feature flags
+- **Minimal Dependencies**: Only essential crates
+- **Optimized Profiles**:
+  - `dev`: Fast compilation with opt-level=2 for dependencies
+  - `release`: LTO thin, optimized for performance
+  - `release-small`: Size-optimized binary
 
-1. **`raw_version_cache`**: Stores complete JSON manifests
-2. **`query_cache`**: Stores extracted data by query
+## Platform Support
 
-Each cache features:
-- **Configurable TTL** per data type (via `Query::cache_ttl()`)
-- **Automatic cleanup** with adaptive sleep
-- **Thread-safe** with `Arc<RwLock<HashMap>>`
-
-## Examples
-
-The [`examples/`](examples/) directory contains complete examples for each loader:
-
-```bash
-cargo run --example vanilla --features vanilla
-cargo run --example fabric --features fabric
-cargo run --example quilt --features quilt
-cargo run --example neoforge --features neoforge
-cargo run --example forge --features forge
-```
+| Platform | Status | Architectures |
+|----------|--------|---------------|
+| Windows | ✅ Tested | x64, ARM64 |
+| Linux | ✅ Tested | x64, ARM64 |
+| macOS | ✅ Tested | x64 (Intel), ARM64 (Apple Silicon) |
 
 ## Requirements
 
 - **Rust 1.75+**
 - **Tokio** async runtime
-- **Internet connection** for downloading game files and JRE
+- **Internet connection** for downloads
 
-## Platform Support
+## Crate Ecosystem
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| Windows | Tested | x64, ARM64 |
-| Linux | Tested | x64, ARM64 |
-| macOS | Tested | x64 (Intel), ARM64 (Apple Silicon) |
+LightyLauncher is composed of multiple focused crates:
 
-## Performance
+- [`lighty-auth`](crates/auth) - Authentication providers
+- [`lighty-event`](crates/event) - Event system
+- [`lighty-java`](crates/java) - Java runtime management
+- [`lighty-launch`](crates/launch) - Game launching
+- [`lighty-loaders`](crates/loaders) - Mod loader implementations
+- [`lighty-version`](crates/version) - Version builders
+- [`lighty-core`](crates/core) - Core utilities
 
-LightyLauncher is optimized for performance:
-
-- **Async I/O**: All filesystem and network operations are async
-- **Parallel Downloads**: Configurable concurrency limits
-- **Smart Caching**: Avoids re-downloads and re-extractions
-- **SHA1 Verification**: Guaranteed integrity without overhead
-- **Minimal Dependencies**: Only essential crates included
-- **Optimized Build Profiles**:
-  - `dev`: Optimizes dependencies (opt-level=2)
-  - `release`: LTO thin, codegen-units=1
-  - `release-small`: Binary size optimized
+Each crate can be used independently or together through the main `lighty-launcher` crate.
 
 ## License
 
-This project is licensed under the **MIT License**.
-See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License** - See [LICENSE](LICENSE) for details.
 
-**Clean Room Implementation**: The Java distribution management system was implemented from scratch using only publicly documented APIs from Adoptium, Oracle, Azul, and Foojay. This ensures full MIT license compatibility.
+**Clean Room Implementation**: All components were implemented from scratch using only publicly documented APIs. No GPL-licensed code was used or referenced.
 
 ## Disclaimer
 
@@ -417,10 +622,9 @@ See the [LICENSE](LICENSE) file for details.
 - **Crates.io**: [crates.io/crates/lighty-launcher](https://crates.io/crates/lighty-launcher)
 - **Repository**: [GitHub](https://github.com/Lighty-Launcher/LightyLauncherLib)
 - **Issues**: [GitHub Issues](https://github.com/Lighty-Launcher/LightyLauncherLib/issues)
-- **Tauri Guide**: [TAURI_USAGE.md](TAURI_USAGE.md)
 
 ---
 
 **Made by Hamadi**
 
-*Built with the Rust ecosystem: Tokio, Reqwest, Serde, Thiserror, and more.*
+*Built with Rust: Tokio, Reqwest, Serde, Thiserror, and more.*

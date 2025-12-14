@@ -3,19 +3,30 @@
 
 //! Mod installation module
 
-use tracing::info;
 use lighty_loaders::types::{VersionInfo, version_metadata::Mods};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use super::verifier::needs_download;
 use super::downloader::download_with_concurrency_limit;
 
-/// Verifies and downloads missing or corrupted mods
-pub async fn verify_and_download_mods(
+#[cfg(feature = "events")]
+use lighty_event::EventBus;
+
+/// Collects mods that need to be downloaded
+pub async fn collect_mod_tasks(
     version: &impl VersionInfo,
     mods: &[Mods],
-) -> InstallerResult<()> {
+) -> Vec<(String, std::path::PathBuf)> {
+    // Don't create mods directory if there are no mods
+    if mods.is_empty() {
+        return Vec::new();
+    }
+
     let parent_path = version.game_dirs().join("mods");
+
+    // Create mods directory only if there are mods to install
+    lighty_core::mkdir!(&parent_path);
+
     let mut tasks = Vec::new();
 
     for _mod in mods {
@@ -29,15 +40,28 @@ pub async fn verify_and_download_mods(
         }
     }
 
+    tasks
+}
+
+/// Downloads mods from pre-collected tasks
+pub async fn download_mods(
+    tasks: Vec<(String, std::path::PathBuf)>,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
     if tasks.is_empty() {
-        info!("[Installer] ✓ All mods already cached and verified");
+        lighty_core::trace_info!("[Installer] ✓ All mods already cached and verified");
         return Ok(());
     }
 
-    info!("[Installer] Downloading {} mods...", tasks.len());
+    lighty_core::trace_info!("[Installer] Downloading {} mods...", tasks.len());
     time_it!("Mods download", {
-        download_with_concurrency_limit(tasks).await?
+        download_with_concurrency_limit(
+            tasks,
+            #[cfg(feature = "events")]
+            event_bus,
+        )
+        .await?
     });
-    info!("[Installer] ✓ Mods installed");
+    lighty_core::trace_info!("[Installer] ✓ Mods installed");
     Ok(())
 }

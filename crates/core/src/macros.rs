@@ -24,7 +24,7 @@ macro_rules! mkdir {
     ($path:expr) => {
         if !$path.exists() {
             if let Err(e) = tokio::fs::create_dir_all(&$path).await {
-                error!("Failed to create directory {:?}: {}", $path, e);
+                $crate::trace_error!("Failed to create directory {:?}: {}", $path, e);
             }
         }
     };
@@ -44,13 +44,79 @@ macro_rules! mkdir_blocking {
 }
 
 
+#[cfg(feature = "tracing")]
 #[macro_export]
 macro_rules! time_it {
     ($label:expr, $expr:expr) => {{
         let start = std::time::Instant::now();
         let result = $expr;
         let elapsed = start.elapsed();
-        tracing::debug!(label = $label, elapsed = ?elapsed, "Operation completed");
+        ::tracing::debug!(label = $label, elapsed = ?elapsed, "Operation completed");
         result
     }};
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! time_it {
+    ($label:expr, $expr:expr) => {{
+        $expr
+    }};
+}
+
+// Conditional tracing macros
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! trace_debug {
+    ($($arg:tt)*) => {
+        ::tracing::debug!($($arg)*)
+    };
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! trace_debug {
+    ($($arg:tt)*) => {{}};
+}
+
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! trace_info {
+    ($($arg:tt)*) => {
+        ::tracing::info!($($arg)*)
+    };
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! trace_info {
+    ($($arg:tt)*) => {{}};
+}
+
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! trace_warn {
+    ($($arg:tt)*) => {
+        ::tracing::warn!($($arg)*)
+    };
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! trace_warn {
+    ($($arg:tt)*) => {{}};
+}
+
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! trace_error {
+    ($($arg:tt)*) => {
+        ::tracing::error!($($arg)*)
+    };
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! trace_error {
+    ($($arg:tt)*) => {{}};
 }

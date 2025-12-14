@@ -3,12 +3,12 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::info;
+use tokio::task::JoinHandle;
 
 #[derive(Debug)]
 pub struct Cache<K, V> {
     store: Arc<RwLock<HashMap<K, (V, Instant)>>>,
-    _cleanup_handle: Option<tokio::task::JoinHandle<()>>,
+    _cleanup_handle: Option<JoinHandle<()>>,
 }
 
 impl<K, V> Cache<K, V>
@@ -74,7 +74,7 @@ where
 
                 // Log AFTER releasing locks
                 if removed > 0 {
-                    info!(removed = removed, "Cache cleaned expired entries");
+                    lighty_core::trace_info!(removed = removed, "Cache cleaned expired entries");
                 }
 
                 // Adaptive sleep

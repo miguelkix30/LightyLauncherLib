@@ -6,7 +6,7 @@ use tokio::fs;
 use thiserror::Error;
 
 /// User-Agent global pour ton launcher
-static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+///static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 /// HTTP client unique et optimisé
 pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {

@@ -12,7 +12,6 @@ use std::process::Stdio;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::oneshot::Receiver;
-use tracing::{debug, info};
 
 /// Wrapper around a Java binary path for process execution
 pub struct JavaRuntime(pub PathBuf);
@@ -42,8 +41,8 @@ impl JavaRuntime {
             });
         }
 
-        debug!("Spawning Java process: {:?}", &self.0);
-        info!("Java arguments: {:?}", &arguments);
+        lighty_core::trace_debug!("Spawning Java process: {:?}", &self.0);
+        lighty_core::trace_info!("Java arguments: {:?}", &arguments);
 
         // Build and spawn command
         let child = Command::new(&self.0)
@@ -53,7 +52,7 @@ impl JavaRuntime {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        info!("Java process spawned successfully");
+        lighty_core::trace_info!("Java process spawned successfully");
         Ok(child)
     }
 
@@ -127,7 +126,7 @@ impl JavaRuntime {
 
                 // Handle early termination signal
                 _ = &mut terminator => {
-                    debug!("Termination signal received, killing process");
+                    lighty_core::trace_debug!("Termination signal received, killing process");
                     process.kill().await?;
                     break;
                 },
@@ -137,7 +136,7 @@ impl JavaRuntime {
                     let exit_status = exit_result?;
                     let exit_code = exit_status.code().unwrap_or(7900);
 
-                    debug!("Java process exited with code: {}", exit_code);
+                    lighty_core::trace_debug!("Java process exited with code: {}", exit_code);
 
                     // Check for error exit codes
                     // -1073740791 = Windows forceful termination (not an error)

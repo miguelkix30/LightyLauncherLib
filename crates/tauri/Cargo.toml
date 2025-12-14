@@ -17,6 +17,8 @@ lighty-java = { workspace = true }
 lighty-loaders = { workspace = true }
 lighty-launch = { workspace = true }
 lighty-auth = { workspace = true }
+lighty-version = { workspace = true }
+lighty-event = { workspace = true, optional = true }
 
 # Tauri
 tauri = { workspace = true, optional = true }
@@ -40,4 +42,5 @@ directories.workspace = true
 
 [features]
 tauri-commands = ["dep:tauri"]
+events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
 default = ["tauri-commands"]

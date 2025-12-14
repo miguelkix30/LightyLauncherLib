@@ -1,42 +1,10 @@
-use directories::ProjectDirs;
-use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 
-// ============================================
-// STATIC INITIALIZATION
-// ============================================
+// Re-export AppState and errors from lighty-core
+pub use lighty_core::{AppState, AppStateError, AppStateResult};
 
-static PROJECT_DIRS: OnceCell<ProjectDirs> = OnceCell::new();
-
-fn get_project_dirs_clone() -> ProjectDirs {
-    PROJECT_DIRS
-        .get()
-        .expect("AppState not initialized")
-        .clone()
-}
-
-static LAZY_PROJECT_DIRS: Lazy<ProjectDirs> = Lazy::new(get_project_dirs_clone);
-
-// ============================================
-// APP STATE
-// ============================================
-
-pub struct AppState;
-
-impl AppState {
-    pub fn new(qualifier: String, organization: String, application: String) -> Self {
-        PROJECT_DIRS.get_or_init(|| {
-            ProjectDirs::from(&qualifier, &organization, &application)
-                .expect("Failed to create project directories")
-        });
-
-        Self
-    }
-
-    pub fn get_project_dirs() -> &'static Lazy<ProjectDirs> {
-        &LAZY_PROJECT_DIRS
-    }
-}
+// Re-export from commands
+pub use crate::commands::version::LightyVersionConfig;
 
 // ============================================
 // TYPES

@@ -1,4 +1,3 @@
-use tracing::{error, info, warn, debug};
 use zip::ZipArchive;
 use async_trait::async_trait;
 use std::{fs::File, io::Read, path::PathBuf, collections::HashMap};
@@ -53,7 +52,7 @@ impl Query for NeoForgeQuery {
             )
         };
 
-        debug!(url = %installer_url, loader = "neoforge", "Installer URL constructed");
+        lighty_core::trace_debug!(url = %installer_url, loader = "neoforge", "Installer URL constructed");
 
         let profiles_dir = version.game_dirs().join(".neoforge");
         mkdir!(profiles_dir);
@@ -64,15 +63,15 @@ impl Query for NeoForgeQuery {
         let needs_download = if installer_path.exists() {
             match verify_installer_sha1(&installer_path, &installer_url).await {
                 Ok(true) => {
-                    info!(loader = "neoforge", "Installer already exists and SHA1 is valid");
+                    lighty_core::trace_info!(loader = "neoforge", "Installer already exists and SHA1 is valid");
                     false
                 }
                 Ok(false) => {
-                    warn!(loader = "neoforge", "Installer exists but SHA1 mismatch, re-downloading");
+                    lighty_core::trace_warn!(loader = "neoforge", "Installer exists but SHA1 mismatch, re-downloading");
                     true
                 }
                 Err(e) => {
-                    warn!(error = %e, loader = "neoforge", "Could not verify SHA1, using existing file");
+                    lighty_core::trace_warn!(error = %e, loader = "neoforge", "Could not verify SHA1, using existing file");
                     false
                 }
             }
@@ -81,7 +80,7 @@ impl Query for NeoForgeQuery {
         };
 
         if needs_download {
-            info!(path = ?installer_path, loader = "neoforge", "Downloading installer");
+            lighty_core::trace_info!(path = ?installer_path, loader = "neoforge", "Downloading installer");
             download_file_untracked(&installer_url, &installer_path)
                 .await
                 .map_err(|e| QueryError::Conversion {
@@ -100,7 +99,7 @@ impl Query for NeoForgeQuery {
         // Lire les JSONs directement depuis le JAR
         let (install_profile, _) = read_jsons_from_jar(&installer_path).await?;
 
-        info!(loader = "neoforge", "Successfully loaded NeoForge metadata");
+        lighty_core::trace_info!(loader = "neoforge", "Successfully loaded NeoForge metadata");
 
         Ok(install_profile)
     }

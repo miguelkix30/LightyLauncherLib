@@ -3,35 +3,52 @@
 
 //! Client JAR installation module
 
-use tracing::info;
 use lighty_loaders::types::{VersionInfo, version_metadata::Client};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use super::verifier::needs_download;
 use super::downloader::download_large_file;
 
-/// Verifies and downloads the client JAR if necessary
-pub async fn verify_and_download_client(
+#[cfg(feature = "events")]
+use lighty_event::EventBus;
+
+/// Collects client JAR task if it needs to be downloaded
+pub async fn collect_client_task(
     version: &impl VersionInfo,
     client: Option<&Client>,
-) -> InstallerResult<()> {
-    let Some(client) = client else {
-        return Ok(());
-    };
-
-    let Some(url) = &client.url else {
-        return Ok(());
-    };
-
+) -> Option<(String, std::path::PathBuf)> {
+    let client = client?;
+    let url = client.url.as_ref()?.clone();
     let client_path = version.game_dirs().join(format!("{}.jar", version.name()));
 
-    if !needs_download(&client_path, client.sha1.as_ref(), "Client JAR").await {
-        info!("[Installer] ✓ Client JAR already cached and verified");
-        return Ok(());
+    if needs_download(&client_path, client.sha1.as_ref(), "Client JAR").await {
+        Some((url, client_path))
+    } else {
+        None
     }
+}
 
-    info!("[Installer] Downloading client JAR...");
-    time_it!("Client download", download_large_file(url.clone(), client_path).await?);
-    info!("[Installer] ✓ Client JAR installed");
+/// Downloads client JAR from pre-collected task
+pub async fn download_client(
+    task: Option<(String, std::path::PathBuf)>,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
+    let Some((url, client_path)) = task else {
+        lighty_core::trace_info!("[Installer] ✓ Client JAR already cached and verified");
+        return Ok(());
+    };
+
+    lighty_core::trace_info!("[Installer] Downloading client JAR...");
+    time_it!(
+        "Client download",
+        download_large_file(
+            url,
+            client_path,
+            #[cfg(feature = "events")]
+            event_bus,
+        )
+        .await?
+    );
+    lighty_core::trace_info!("[Installer] ✓ Client JAR installed");
     Ok(())
 }

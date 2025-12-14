@@ -13,6 +13,7 @@ description = "Authentication modules for Lighty Launcher"
 [dependencies]
 # Workspace crates
 lighty-core = { workspace = true }
+lighty-event = { workspace = true, optional = true }
 
 # Async Runtime
 tokio.workspace = true
@@ -28,4 +29,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 # Logging
-tracing.workspace = true
+tracing = { workspace = true, optional = true }
+
+[features]
+events = ["lighty-event"]
+tracing = ["dep:tracing"]

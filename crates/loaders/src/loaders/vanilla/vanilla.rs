@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use tracing::{error, info, warn};
 use once_cell::sync::Lazy;
-use std::time::Duration;
 use lighty_core::{mkdir, verify_file_sha1};
 use lighty_core::system::{ARCHITECTURE, OS};
 use crate::utils::error::QueryError;
@@ -16,6 +14,8 @@ use crate::types::VersionInfo;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
+
+const CLIENT_NAME: &str = "client";
 
 pub static VANILLA: Lazy<ManifestRepository<VanillaQuery>> = Lazy::new(|| ManifestRepository::new());
 
@@ -57,7 +57,7 @@ impl Query for VanillaQuery {
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<VanillaMetaData> {
         let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-        info!("Fetching manifest from {}", manifest_url);
+        lighty_core::trace_info!("Fetching manifest from {}", manifest_url);
 
         let manifest: PistonMetaManifest = CLIENT.get(manifest_url).send().await?.json().await?;
 
@@ -79,7 +79,7 @@ impl Query for VanillaQuery {
             VanillaQuery::JavaVersion => VersionMetaData::JavaVersion(extract_java_version(full_data)),
             VanillaQuery::MainClass => VersionMetaData::MainClass(extract_main_class(full_data)),
             VanillaQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data)),
-            VanillaQuery::Natives => VersionMetaData::Natives(extract_natives(full_data)),
+            VanillaQuery::Natives => VersionMetaData::Natives(extract_natives(full_data)?),
             VanillaQuery::AssetsIndex => VersionMetaData::AssetsIndex(extract_assets_index(full_data)),
             VanillaQuery::Assets => VersionMetaData::Assets(extract_assets(version,full_data).await?),
             VanillaQuery::Client => VersionMetaData::Client(extract_client(version, full_data)?),
@@ -97,7 +97,7 @@ impl Query for VanillaQuery {
             arguments: extract_arguments(full_data),
             libraries: extract_libraries(full_data),
             mods: None,
-            natives: Some(extract_natives(full_data)),
+            natives: Some(extract_natives(full_data)?),
             client: extract_client(version, full_data).ok(),
             assets_index: Some(extract_assets_index(full_data)),
             assets: Some(extract_assets(version,full_data).await?),
@@ -124,15 +124,23 @@ fn extract_libraries(full_data: &VanillaMetaData) -> Vec<Library> {
 }
 
 /// --------- Natives ----------
-fn extract_natives(full_data: &VanillaMetaData) -> Vec<Native> {
+fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
     let os_name = OS.get_vanilla_os()
-        .expect("Operating system must be supported (Windows, Linux, or macOS) to extract natives");
-    let arch_suffix = ARCHITECTURE.get_vanilla_arch()
-        .expect("Architecture must be supported (x86, x64, ARM, or ARM64) to extract natives");
-    let arch_bits = ARCHITECTURE.get_arch_bits()
-        .expect("Architecture bits must be determinable (32 or 64) to extract natives");
+        .map_err(|_| QueryError::Conversion {
+            message: format!("Unsupported operating system. Only Windows, Linux, and macOS are supported for native extraction. Detected OS: {:?}", std::env::consts::OS)
+        })?;
 
-    full_data.libraries
+    let arch_suffix = ARCHITECTURE.get_vanilla_arch()
+        .map_err(|_| QueryError::Conversion {
+            message: format!("Unsupported architecture. Only x86, x64, ARM, and ARM64 are supported. Detected architecture: {:?}", std::env::consts::ARCH)
+        })?;
+
+    let arch_bits = ARCHITECTURE.get_arch_bits()
+        .map_err(|_| QueryError::Conversion {
+            message: format!("Unable to determine architecture bits (32 or 64). Detected architecture: {:?}", std::env::consts::ARCH)
+        })?;
+
+    let natives = full_data.libraries
         .iter()
         .filter_map(|lib| {
             // Cas 1: Nouveau format
@@ -183,7 +191,9 @@ fn extract_natives(full_data: &VanillaMetaData) -> Vec<Native> {
 
             None
         })
-        .collect()
+        .collect();
+
+    Ok(natives)
 }
 
 /// Vérifie si les rules permettent d'utiliser cette bibliothèque sur l'OS actuel
@@ -247,11 +257,11 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
     let needs_download = if index_file_path.exists() {
         match verify_file_sha1(&index_file_path, &asset_index.sha1).await {
             Ok(true) => {
-                info!("[Assets] Index {} already cached and valid", asset_index.id);
+                lighty_core::trace_info!("[Assets] Index {} already cached and valid", asset_index.id);
                 false
             }
             _ => {
-                warn!("[Assets] Index {} SHA1 mismatch, re-downloading", asset_index.id);
+                lighty_core::trace_warn!("[Assets] Index {} SHA1 mismatch, re-downloading", asset_index.id);
                 let _ = tokio::fs::remove_file(&index_file_path).await;
                 true
             }
@@ -262,7 +272,7 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
 
     // Télécharger si nécessaire
     if needs_download {
-        info!("[Assets] Downloading index {} from {}", asset_index.id, asset_index.url);
+        lighty_core::trace_info!("[Assets] Downloading index {} from {}", asset_index.id, asset_index.url);
 
         let response = CLIENT.get(&asset_index.url).send().await?;
 
@@ -280,7 +290,7 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
 
         match verify_file_sha1(&index_file_path, &asset_index.sha1).await {
             Ok(true) => {
-                info!("[Assets] Index {} downloaded and verified", asset_index.id);
+                lighty_core::trace_info!("[Assets] Index {} downloaded and verified", asset_index.id);
             }
             _ => {
                 let _ = tokio::fs::remove_file(&index_file_path).await;
@@ -319,14 +329,14 @@ fn extract_client<V: VersionInfo>(version: &V, full_data: &VanillaMetaData) -> R
     full_data.downloads.client
         .as_ref()
         .map(|client| Client {
-            name: "client".to_string(),
+            name: CLIENT_NAME.into(),
             url: Some(client.url.clone()),
             path: Some(format!("{}.jar", version.name())),
             sha1: Some(client.sha1.clone()),
             size: Some(client.size),
         })
         .ok_or_else(|| QueryError::MissingField {
-            field: "client".into(),
+            field: CLIENT_NAME.into(),
         })
 }
 

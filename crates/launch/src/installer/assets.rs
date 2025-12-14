@@ -3,20 +3,22 @@
 
 //! Assets installation module
 
-use tracing::info;
 use lighty_loaders::types::{VersionInfo, version_metadata::AssetsFile};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use super::verifier::needs_download;
 use super::downloader::download_small_with_concurrency_limit;
 
-/// Verifies and downloads missing or corrupted assets
-pub async fn verify_and_download_assets(
+#[cfg(feature = "events")]
+use lighty_event::EventBus;
+
+/// Collects assets that need to be downloaded
+pub async fn collect_asset_tasks(
     version: &impl VersionInfo,
     assets: Option<&AssetsFile>,
-) -> InstallerResult<()> {
+) -> Vec<(String, std::path::PathBuf)> {
     let Some(assets) = assets else {
-        return Ok(());
+        return Vec::new();
     };
 
     let parent_path = version.game_dirs().join("assets").join("objects");
@@ -34,15 +36,28 @@ pub async fn verify_and_download_assets(
         }
     }
 
+    tasks
+}
+
+/// Downloads assets from pre-collected tasks
+pub async fn download_assets(
+    tasks: Vec<(String, std::path::PathBuf)>,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
     if tasks.is_empty() {
-        info!("[Installer] ✓ All assets already cached and verified");
+        lighty_core::trace_info!("[Installer] ✓ All assets already cached and verified");
         return Ok(());
     }
 
-    info!("[Installer] Downloading {} new assets...", tasks.len());
+    lighty_core::trace_info!("[Installer] Downloading {} new assets...", tasks.len());
     time_it!("Assets download", {
-        download_small_with_concurrency_limit(tasks).await?
+        download_small_with_concurrency_limit(
+            tasks,
+            #[cfg(feature = "events")]
+            event_bus,
+        )
+        .await?
     });
-    info!("[Installer] ✓ Assets installed");
+    lighty_core::trace_info!("[Installer] ✓ Assets installed");
     Ok(())
 }

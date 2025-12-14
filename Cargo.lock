@@ -2143,9 +2143,10 @@ dependencies = [
 
 [[package]]
 name = "lighty-auth"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "lighty-core",
+ "lighty-event",
  "reqwest",
  "serde",
  "serde_json",
@@ -2156,13 +2157,14 @@ dependencies = [
 
 [[package]]
 name = "lighty-core"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "async-compression",
  "async_zip",
  "directories",
  "futures-util",
  "hex",
+ "lighty-event",
  "once_cell",
  "os_info",
  "path-absolutize",
@@ -2180,10 +2182,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lighty-event"
+version = "0.8.2"
+dependencies = [
+ "serde",
+ "thiserror 2.0.16",
+ "tokio",
+]
+
+[[package]]
 name = "lighty-java"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "lighty-core",
+ "lighty-event",
  "path-absolutize",
  "serde",
  "thiserror 2.0.16",
@@ -2193,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-launch"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "async-trait",
  "async_zip",
@@ -2203,10 +2215,10 @@ dependencies = [
  "hex",
  "lighty-auth",
  "lighty-core",
+ "lighty-event",
  "lighty-java",
  "lighty-loaders",
  "lighty-version",
- "memmap2",
  "once_cell",
  "reqwest",
  "sanitize-filename",
@@ -2215,18 +2227,20 @@ dependencies = [
  "sha1",
  "thiserror 2.0.16",
  "tokio",
+ "tokio-util",
  "tracing",
- "zip",
 ]
 
 [[package]]
 name = "lighty-launcher"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
+ "anyhow",
  "criterion",
  "directories",
  "lighty-auth",
  "lighty-core",
+ "lighty-event",
  "lighty-java",
  "lighty-launch",
  "lighty-loaders",
@@ -2242,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-loaders"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "async-trait",
  "async_zip",
@@ -2263,14 +2277,16 @@ dependencies = [
 
 [[package]]
 name = "lighty-tauri"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "directories",
  "lighty-auth",
  "lighty-core",
+ "lighty-event",
  "lighty-java",
  "lighty-launch",
  "lighty-loaders",
+ "lighty-version",
  "once_cell",
  "serde",
  "serde_json",
@@ -2282,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-version"
-version = "0.6.3"
+version = "0.8.2"
 dependencies = [
  "async-trait",
  "directories",

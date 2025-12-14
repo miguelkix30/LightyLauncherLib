@@ -36,7 +36,7 @@ impl Query for FabricQuery {
             "https://meta.fabricmc.net/v2/versions/loader/{}/{}/profile/json",
             version.minecraft_version(), version.loader_version()
         );
-        tracing::debug!(url = %manifest_url, loader = "fabric", "Fetching manifest");
+        lighty_core::trace_debug!(url = %manifest_url, loader = "fabric", "Fetching manifest");
         let manifest: FabricMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
 
         Ok(manifest)
@@ -135,36 +135,40 @@ fn extract_artifact_key(maven_name: &str) -> String {
 ///-----------------------------
 /// Version optimisée avec requêtes parallèles - retourne Result pour try_join!
 async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
-    let libraries = full_data.libraries.clone();
-    let futures = libraries.into_iter().map(|lib| {
+    let futures = full_data.libraries.iter().map(|lib| {
+        let lib_name = lib.name.clone();
+        let lib_url = lib.url.clone();
+        let lib_sha1 = lib.sha1.clone();
+        let lib_size = lib.size;
+
         async move {
-            let base_url = lib.url.as_deref().unwrap_or("https://maven.fabricmc.net/");
-            let (path, full_url) = maven_artifact_to_path_and_url(&lib.name, base_url);
+            let base_url = lib_url.as_deref().unwrap_or("https://maven.fabricmc.net/");
+            let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, base_url);
 
             // Si SHA1 ou size sont manquants, on les récupère
-            let (sha1, size) = if lib.sha1.is_none() || lib.size.is_none() {
+            let (sha1, size) = if lib_sha1.is_none() || lib_size.is_none() {
                 tokio::join!(
                     async {
-                        if lib.sha1.is_none() {
+                        if lib_sha1.is_none() {
                             fetch_maven_sha1(&full_url).await
                         } else {
-                            lib.sha1.clone()
+                            lib_sha1.clone()
                         }
                     },
                     async {
-                        if lib.size.is_none() {
+                        if lib_size.is_none() {
                             fetch_file_size(&full_url).await
                         } else {
-                            lib.size
+                            lib_size
                         }
                     }
                 )
             } else {
-                (lib.sha1, lib.size)
+                (lib_sha1, lib_size)
             };
 
             Library {
-                name: lib.name,
+                name: lib_name,
                 url: Some(full_url),
                 path: Some(path),
                 sha1,
@@ -239,6 +243,6 @@ fn extract_arguments(full_data: &FabricMetaData) -> Arguments {
 
 fn extract_main_class(full_data: &FabricMetaData) -> MainClass {
     MainClass {
-        main_class: full_data.mainClass.clone(),
+        main_class: full_data.main_class.clone(),
     }
 }

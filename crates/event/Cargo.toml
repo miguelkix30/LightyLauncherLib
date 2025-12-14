@@ -1,0 +1,12 @@
+[package]
+name = "lighty-event"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Event system for LightyLauncher"
+
+[dependencies]
+tokio = { version = "1", features = ["sync"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2.0"

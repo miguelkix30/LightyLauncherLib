@@ -21,23 +21,6 @@ impl<F: Query> ManifestRepository<F> {
         }
     }
 
-    async fn get_cached_version_data<V: VersionInfo>(&self, version: &V) -> Result<Arc<<F as Query>::Raw>> {
-        let ttl = F::cache_ttl();
-        let key = version.name().to_string();
-
-        let data = self
-            .raw_version_cache
-            .get_or_try_insert_with(key.clone(), ttl, || {
-                let version = version.clone();
-                async move {
-                    F::fetch_full_data(&version).await.map(Arc::new)
-                }
-            })
-            .await?;
-
-        Ok(data)
-    }
-
     pub async fn get<V: VersionInfo>(
         &self,
         version: &V,
@@ -70,6 +53,22 @@ impl<F: Query> ManifestRepository<F> {
             .await?;
 
         Ok(manifest_data)
+    }
+    async fn get_cached_version_data<V: VersionInfo>(&self, version: &V) -> Result<Arc<<F as Query>::Raw>> {
+        let ttl = F::cache_ttl();
+        let key = version.name().to_string();
+
+        let data = self
+            .raw_version_cache
+            .get_or_try_insert_with(key.clone(), ttl, || {
+                let version = version.clone();
+                async move {
+                    F::fetch_full_data(&version).await.map(Arc::new)
+                }
+            })
+            .await?;
+
+        Ok(data)
     }
 
     pub async fn clear_cache(&self) {

@@ -18,6 +18,9 @@ use lighty_core::extract::{tar_gz_extract, zip_extract};
 
 use super::JavaDistribution;
 
+#[cfg(feature = "events")]
+use lighty_event::{EventBus, Event, JavaEvent};
+
 /// Locates an existing Java binary in the runtime directory
 ///
 /// Searches for the java executable in the expected directory structure
@@ -46,7 +49,114 @@ pub async fn find_java_binary(
     Ok(binary_path.absolutize()?.to_path_buf())
 }
 
-/// Downloads and installs a JRE to the specified directory
+/// Downloads and installs a JRE to the specified directory (with events feature)
+///
+/// # Arguments
+/// * `runtimes_folder` - Base directory for JRE installation
+/// * `distribution` - Java distribution to download
+/// * `version` - Java major version number
+/// * `on_progress` - Callback for download progress (bytes_downloaded, total_bytes)
+/// * `event_bus` - Optional event bus for emitting events
+///
+/// # Returns
+/// Path to the installed java binary
+#[cfg(feature = "events")]
+pub async fn jre_download<F>(
+    runtimes_folder: &Path,
+    distribution: &JavaDistribution,
+    version: &u8,
+    on_progress: F,
+    event_bus: Option<&EventBus>,
+) -> JreResult<PathBuf>
+where
+    F: Fn(u64, u64),
+{
+    let runtime_dir = build_runtime_path(runtimes_folder, distribution, version);
+
+    // Clean existing installation
+    prepare_installation_directory(&runtime_dir).await?;
+
+    // Get download URL
+    let download_url = distribution
+        .get_download_url(version)
+        .await
+        .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
+
+    // Emit JavaDownloadStarted event
+    if let Some(bus) = event_bus {
+        // Get total bytes first
+        let response = lighty_core::hosts::HTTP_CLIENT
+            .get(&download_url)
+            .send()
+            .await
+            .map_err(|e| JreError::Download(format!("Failed to check file size: {}", e)))?;
+
+        let total_bytes = response.content_length().unwrap_or(0);
+
+        bus.emit(Event::Java(JavaEvent::JavaDownloadStarted {
+            distribution: distribution.get_name().to_string(),
+            version: *version,
+            total_bytes,
+        }));
+    }
+
+    // Download JRE archive with progress tracking
+    let archive_bytes = {
+        let event_bus_ref = event_bus;
+        download_file(&download_url, |current, _total| {
+            on_progress(current, _total);
+            if let Some(bus) = event_bus_ref {
+                // Only emit progress for actual chunks (not initial 0)
+                if current > 0 {
+                    bus.emit(Event::Java(JavaEvent::JavaDownloadProgress {
+                        bytes: current,
+                    }));
+                }
+            }
+        })
+        .await
+        .map_err(|e| JreError::Download(format!("Download failed: {}", e)))?
+    };
+
+    // Emit JavaDownloadCompleted event
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Java(JavaEvent::JavaDownloadCompleted {
+            distribution: distribution.get_name().to_string(),
+            version: *version,
+        }));
+    }
+
+    // Emit JavaExtractionStarted event
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Java(JavaEvent::JavaExtractionStarted {
+            distribution: distribution.get_name().to_string(),
+            version: *version,
+        }));
+    }
+
+    // Extract archive based on OS
+    extract_archive(
+        &archive_bytes,
+        &runtime_dir,
+        event_bus,
+    ).await?;
+
+    // Locate and return the java binary
+    let binary_path = find_java_binary(runtimes_folder, distribution, version).await?;
+
+    // Emit JavaExtractionCompleted event
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Java(JavaEvent::JavaExtractionCompleted {
+            distribution: distribution.get_name().to_string(),
+            version: *version,
+            binary_path: binary_path.to_string_lossy().to_string(),
+        }));
+    }
+
+    Ok(binary_path)
+}
+
+/// Downloads and installs a JRE to the specified directory (without events feature)
 ///
 /// # Arguments
 /// * `runtimes_folder` - Base directory for JRE installation
@@ -56,6 +166,7 @@ pub async fn find_java_binary(
 ///
 /// # Returns
 /// Path to the installed java binary
+#[cfg(not(feature = "events"))]
 pub async fn jre_download<F>(
     runtimes_folder: &Path,
     distribution: &JavaDistribution,
@@ -113,7 +224,36 @@ async fn prepare_installation_directory(runtime_dir: &Path) -> JreResult<()> {
     Ok(())
 }
 
-/// Extracts the JRE archive based on the operating system
+/// Extracts the JRE archive based on the operating system (with events feature)
+#[cfg(feature = "events")]
+async fn extract_archive(
+    archive_bytes: &[u8],
+    destination: &Path,
+    event_bus: Option<&EventBus>,
+) -> JreResult<()> {
+    let cursor = Cursor::new(archive_bytes);
+
+    match OS {
+        OperatingSystem::WINDOWS => {
+            zip_extract(cursor, destination, event_bus)
+                .await
+                .map_err(|e| JreError::Extraction(format!("ZIP extraction failed: {}", e)))?;
+        }
+        OperatingSystem::LINUX | OperatingSystem::OSX => {
+            tar_gz_extract(cursor, destination, event_bus)
+                .await
+                .map_err(|e| JreError::Extraction(format!("TAR.GZ extraction failed: {}", e)))?;
+        }
+        OperatingSystem::UNKNOWN => {
+            return Err(JreError::UnsupportedOS);
+        }
+    }
+
+    Ok(())
+}
+
+/// Extracts the JRE archive based on the operating system (without events feature)
+#[cfg(not(feature = "events"))]
 async fn extract_archive(archive_bytes: &[u8], destination: &Path) -> JreResult<()> {
     let cursor = Cursor::new(archive_bytes);
 
@@ -157,11 +297,7 @@ async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
     // Build path to java binary based on OS
     let java_binary = match OS {
         OperatingSystem::WINDOWS => jre_root.join("bin").join("java.exe"),
-        OperatingSystem::OSX => jre_root
-            .join("Contents")
-            .join("Home")
-            .join("bin")
-            .join("java"),
+        OperatingSystem::OSX => jre_root.join("Contents").join("Home").join("bin").join("java"),
         _ => jre_root.join("bin").join("java"),
     };
 

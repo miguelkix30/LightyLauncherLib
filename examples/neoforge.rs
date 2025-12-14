@@ -1,8 +1,14 @@
 //NOT FINISHED
-use lighty_launcher::{JavaDistribution, Launch, Loader, VersionBuilder};
+use lighty_launcher::{
+    auth::{OfflineAuth, Authenticator},
+    java::JavaDistribution,
+    launch::Launch,
+    loaders::Loader,
+    version::VersionBuilder,
+};
 use directories::ProjectDirs;
 use once_cell::sync::Lazy;
-use tracing::{info, error};
+use tracing::info;
 
 static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
     Lazy::new(|| {
@@ -11,18 +17,21 @@ static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
     });
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
 
-    let username = "Hamadi";
-    let uuid = "37fefc81-1e26-4d31-a988-74196affc99b";
+    // Authentification offline
+    let mut auth = OfflineAuth::new("Hamadi");
+    let profile = auth.authenticate().await?;
 
+    let mut neoforge = VersionBuilder::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2", &LAUNCHER_DIRECTORY);
 
-    let  mut neoforge = VersionBuilder::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2",&LAUNCHER_DIRECTORY);
+    neoforge.launch(&profile, JavaDistribution::Temurin)
+        .run()
+        .await?;
 
+    info!("Launch successful!");
 
-    match neoforge.launch(username, uuid, JavaDistribution::Temurin).await {
-        Ok(()) => info!("✅ Launch successful!"),
-        Err(e) => error!("❌ Launch failed: {:?}", e),
-    }
+    Ok(())
 }

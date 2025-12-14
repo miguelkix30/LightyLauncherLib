@@ -1,21 +1,65 @@
 use serde::{Deserialize, Serialize};
 
+// Response du serveur contenant la liste des serveurs disponibles
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServersResponse {
-    pub servers: Vec<ServerInfo>,
+    servers: Vec<ServerInfo>,
 }
 
+impl ServersResponse {
+    /// Retourne la liste des serveurs disponibles
+    pub fn servers(&self) -> &[ServerInfo] {
+        &self.servers
+    }
+
+    /// Trouve un serveur par son nom
+    pub fn find_by_name(&self, name: &str) -> Option<&ServerInfo> {
+        self.servers.iter().find(|s| s.name == name)
+    }
+}
+
+// Info d'un serveur spécifique
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
-    pub name: String,
-    pub loader: String,
-    pub minecraft_version: String,
-    pub url: String,
-    pub last_update: String,  // ISO 8601 timestamp (RFC 3339)
+    name: String,
+    loader: String,
+    minecraft_version: String,
+    url: String,
+    last_update: String,
 }
+
+impl ServerInfo {
+    /// Retourne le nom du serveur
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Retourne le type de loader (vanilla, fabric, quilt, etc.)
+    pub fn loader(&self) -> &str {
+        &self.loader
+    }
+
+    /// Retourne la version Minecraft
+    pub fn minecraft_version(&self) -> &str {
+        &self.minecraft_version
+    }
+
+    /// Retourne l'URL du serveur
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// Retourne la date de dernière mise à jour
+    pub fn last_update(&self) -> &str {
+        &self.last_update
+    }
+}
+
 //STRUCTURE OF LIGHTY_UPDATER METADATA
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LightyMetadata {
+    #[serde(skip)]  // Ne pas sérialiser server_info car il vient d'une autre requête
+    pub server_info: Option<ServerInfo>,
     pub main_class: MainClass,
     pub java_version: JavaVersion,
     pub arguments: Arguments,

@@ -20,9 +20,11 @@ pub struct VersionInfo {
     pub version_type: String,
     pub url: String,
     pub time: String,
-    pub releaseTime: String,
+    #[serde(rename = "releaseTime")]
+    pub release_time: String,
     pub sha1: String,
-    pub complianceLevel: i32,
+    #[serde(rename = "complianceLevel")]
+    pub compliance_level: i32,
 }
 
 

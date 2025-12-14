@@ -5,13 +5,16 @@ use serde::Deserialize;
 pub struct FabricMetaData {
     pub arguments: FabricArguments,
     pub id: String,
-    pub inheritsFrom: String,
+    #[serde(rename = "inheritsFrom")]
+    pub inherits_from: String,
     pub libraries: Vec<FabricLibrary>,
-    pub mainClass: String,
-    pub releaseTime: String,
+    #[serde(rename = "mainClass")]
+    pub main_class: String,
+    #[serde(rename = "releaseTime")]
+    pub release_time: String,
     pub time: String,
     #[serde(rename = "type")]
-    pub release_type: String,
+    pub version_type: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,7 +1,15 @@
-use lighty_launcher::{JavaDistribution, Launch, LightyVersionBuilder};
+use lighty_launcher::{
+    auth::{OfflineAuth, Authenticator},
+    java::JavaDistribution,
+    launch::Launch,
+    version::LightyVersionBuilder,
+    loaders::LoaderExtensions
+};
 use directories::ProjectDirs;
 use once_cell::sync::Lazy;
-use tracing::{info, error};
+
+//use tokio::{fs,io::AsyncWriteExt};
+
 
 static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
     Lazy::new(|| {
@@ -10,21 +18,33 @@ static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
     });
 
 #[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+async fn main() -> anyhow::Result<()> {
+    //tracing_subscriber::fmt() .with_max_level(tracing::Level::DEBUG) .init();
 
-    let username = "Hamadi";
-    let uuid = "37fefc81-1e26-4d31-a988-74196affc99b";
+    let mut auth = OfflineAuth::new("Hamadi");
+    let profile = auth.authenticate().await?;
+
     let url = "http://localhost:8080";
 
     // Pour LightyUpdater
-    let mut version = LightyVersionBuilder::new("minozia", url, "1.7.10", &LAUNCHER_DIRECTORY);
+    let mut version = LightyVersionBuilder::new("minozia", url, &LAUNCHER_DIRECTORY);
+
+    let manifest = version.get_lighty_updater_complete().await?;
 
 
-    match version.launch(username, uuid, JavaDistribution::Temurin).await {
-        Ok(()) => info!("✅ Launch successful!"),
-        Err(e) => error!("❌ Launch failed: {:?}", e),
-    }
+    // let content = format!("{:#?}", manifest);
+    // let path = "manifest_debug.txt";
+    // let mut file = fs::File::create(path).await?;
+    // file.write_all(content.as_bytes()).await?;
+    // file.flush().await?;
+
+
+    //dbg!(&version);
+
+    version.launch(&profile, JavaDistribution::Temurin)
+        .run()
+        .await?;
+
+
+    Ok(())
 }

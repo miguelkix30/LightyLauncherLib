@@ -20,9 +20,8 @@
 use std::path::Path;
 
 use crate::errors::DownloadResult;
+use crate::{trace_debug};
 use tokio::fs;
-use tracing::debug;
-
 use crate::hosts::HTTP_CLIENT;
 
 /// Download file using HTTP_CLIENT without any progress tracking
@@ -39,7 +38,7 @@ pub async fn download_file<F>(url: &str, on_progress: F) -> DownloadResult<Vec<u
 where
     F: Fn(u64, u64),
 {
-    debug!("Downloading file {:?}", url);
+    trace_debug!("Downloading file {:?}", url);
 
     let mut response = HTTP_CLIENT
         .get(url.trim())
@@ -47,7 +46,7 @@ where
         .await?
         .error_for_status()?;
 
-    debug!("Response received from url");
+    trace_debug!("Response received from url");
 
     let max_len = response.content_length().unwrap_or(0);
     let mut output = Vec::with_capacity(max_len as usize);
@@ -55,13 +54,13 @@ where
 
     on_progress(0, max_len);
 
-    debug!("Reading data from response chunk...");
+    trace_debug!("Reading data from response chunk...");
     while let Some(data) = response.chunk().await? {
         output.extend_from_slice(&data);
         curr_len += data.len();
         on_progress(curr_len as u64, max_len);
     }
 
-    debug!("Downloaded file");
+    trace_debug!("Downloaded file");
     Ok(output)
 }

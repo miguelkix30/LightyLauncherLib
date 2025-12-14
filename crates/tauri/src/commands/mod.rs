@@ -1,13 +1,15 @@
-mod utils;
+pub mod utils;
 
-mod java;
-mod launch;
-mod loaders;
-mod path;
-mod version;
+pub mod auth;
+pub mod core;
+pub mod java;
+pub mod launch;
+pub mod loaders;
+pub mod version;
 
+pub use auth::*;
+pub use core::*;
 pub use java::*;
 pub use launch::*;
 pub use loaders::*;
-pub use path::*;
 pub use version::*;

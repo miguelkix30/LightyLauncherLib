@@ -3,18 +3,20 @@
 
 //! Library installation module
 
-use tracing::info;
 use lighty_loaders::types::{VersionInfo, version_metadata::Library};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
 use super::verifier::needs_download;
 use super::downloader::download_with_concurrency_limit;
 
-/// Verifies and downloads missing or corrupted libraries
-pub async fn verify_and_download_libraries(
+#[cfg(feature = "events")]
+use lighty_event::EventBus;
+
+/// Collects libraries that need to be downloaded
+pub async fn collect_library_tasks(
     version: &impl VersionInfo,
     libraries: &[Library],
-) -> InstallerResult<()> {
+) -> Vec<(String, std::path::PathBuf)> {
     let parent_path = version.game_dirs().join("libraries");
     let mut tasks = Vec::new();
 
@@ -29,15 +31,28 @@ pub async fn verify_and_download_libraries(
         }
     }
 
+    tasks
+}
+
+/// Downloads libraries from pre-collected tasks
+pub async fn download_libraries(
+    tasks: Vec<(String, std::path::PathBuf)>,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
     if tasks.is_empty() {
-        info!("[Installer] ✓ All libraries already cached and verified");
+        lighty_core::trace_info!("[Installer] ✓ All libraries already cached and verified");
         return Ok(());
     }
 
-    info!("[Installer] Downloading {} libraries...", tasks.len());
+    lighty_core::trace_info!("[Installer] Downloading {} libraries...", tasks.len());
     time_it!("Libraries download", {
-        download_with_concurrency_limit(tasks).await?
+        download_with_concurrency_limit(
+            tasks,
+            #[cfg(feature = "events")]
+            event_bus,
+        )
+        .await?
     });
-    info!("[Installer] ✓ Libraries installed");
+    lighty_core::trace_info!("[Installer] ✓ Libraries installed");
     Ok(())
 }

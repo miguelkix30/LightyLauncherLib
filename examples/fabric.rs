@@ -1,7 +1,13 @@
-use lighty_launcher::{JavaDistribution, Launch, Loader, VersionBuilder};
+use lighty_launcher::{
+    auth::{OfflineAuth, Authenticator},
+    java::JavaDistribution,
+    launch::Launch,
+    loaders::Loader,
+    version::VersionBuilder,
+};
 use directories::ProjectDirs;
 use once_cell::sync::Lazy;
-use tracing::{info, error};
+use tracing::info;
 
 static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
     Lazy::new(|| {
@@ -10,19 +16,21 @@ static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
     });
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "tracing")]
     tracing_subscriber::fmt::init();
 
-    let username = "Hamadi";
-    let uuid = "37fefc81-1e26-4d31-a988-74196affc99b";
+    // Authentification offline
+    let mut auth = OfflineAuth::new("Hamadi");
+    let profile = auth.authenticate().await?;
 
+    let mut fabric = VersionBuilder::new("fabric", Loader::Fabric, "0.17.2", "1.21.8", &LAUNCHER_DIRECTORY);
 
-    let mut fabric = VersionBuilder::new("fabric", Loader::Fabric, "0.17.2", "1.21.8",&LAUNCHER_DIRECTORY);
+    fabric.launch(&profile, JavaDistribution::Temurin)
+        .run()
+        .await?;
 
+    info!("Launch successful!");
 
-    match fabric.launch(username, uuid, JavaDistribution::Temurin).await {
-        Ok(()) => info!("✅ Launch successful!"),
-        Err(e) => error!("❌ Launch failed: {:?}", e),
-    }
-
+    Ok(())
 }

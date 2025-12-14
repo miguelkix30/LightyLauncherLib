@@ -8,33 +8,40 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::Semaphore;
-use tracing::{error, warn};
 use futures::future::try_join_all;
 use futures::StreamExt;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use lighty_core::mkdir;
 use crate::errors::InstallerResult;
 use crate::errors::InstallerError;
-//TODO: Make this configurable with a instance
-/// Maximum number of concurrent downloads to prevent socket exhaustion
-pub const MAX_CONCURRENT_DOWNLOADS: usize = 50;
+use super::config::get_config;
+
+#[cfg(feature = "events")]
+use lighty_event::{EventBus, Event, LaunchEvent};
 
 /// Downloads small files (loaded entirely in memory)
-pub async fn download_small_file(url: String, dest: PathBuf) -> InstallerResult<()> {
-    const MAX_RETRIES: u32 = 3;
-    const INITIAL_DELAY_MS: u64 = 20;
-
+pub async fn download_small_file(
+    url: String,
+    dest: PathBuf,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
+    let config = get_config();
     let mut last_error = None;
 
-    for attempt in 1..=MAX_RETRIES {
-        match download_small_file_once(&url, &dest).await {
+    for attempt in 1..=config.max_retries {
+        match download_small_file_once(
+            &url,
+            &dest,
+            #[cfg(feature = "events")]
+            event_bus,
+        ).await {
             Ok(_) => return Ok(()),
             Err(e) => {
-                if attempt < MAX_RETRIES {
-                    let delay = INITIAL_DELAY_MS * 2u64.pow(attempt - 1);
-                    warn!(
+                if attempt < config.max_retries {
+                    let delay = config.initial_delay_ms * 2u64.pow(attempt - 1);
+                    lighty_core::trace_warn!(
                         "[Retry {}/{}] Failed to download {}: {}. Retrying in {}ms...",
-                        attempt, MAX_RETRIES, url, e, delay
+                        attempt, config.max_retries, url, e, delay
                     );
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 }
@@ -43,11 +50,28 @@ pub async fn download_small_file(url: String, dest: PathBuf) -> InstallerResult<
         }
     }
 
-    Err(last_error.unwrap())
+    Err(last_error.unwrap_or_else(|| {
+        InstallerError::DownloadFailed(format!(
+            "Download failed after {} retries without specific error details: {}",
+            config.max_retries, url
+        ))
+    }))
 }
 
-async fn download_small_file_once(url: &str, dest: &PathBuf) -> InstallerResult<()> {
+async fn download_small_file_once(
+    url: &str,
+    dest: &PathBuf,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
     let bytes = CLIENT.get(url).send().await?.bytes().await?;
+
+    // Emit install progress event for the entire file
+    #[cfg(feature = "events")]
+    if let Some(bus) = event_bus {
+        bus.emit(Event::Launch(LaunchEvent::InstallProgress {
+            bytes: bytes.len() as u64,
+        }));
+    }
 
     if let Some(parent) = dest.parent() {
         mkdir!(parent);
@@ -58,21 +82,30 @@ async fn download_small_file_once(url: &str, dest: &PathBuf) -> InstallerResult<
 }
 
 /// Downloads large files with streaming (memory efficient)
-pub async fn download_large_file(url: String, dest: PathBuf) -> InstallerResult<()> {
-    const MAX_RETRIES: u32 = 3;
-    const INITIAL_DELAY_MS: u64 = 20;
-
+pub async fn download_large_file(
+    url: String,
+    dest: PathBuf,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
+    let config = get_config();
     let mut last_error = None;
 
-    for attempt in 1..=MAX_RETRIES {
-        match download_large_file_once(&url, &dest).await {
+    for attempt in 1..=config.max_retries {
+        match download_large_file_once(
+            &url,
+            &dest,
+            #[cfg(feature = "events")]
+            event_bus,
+        )
+        .await
+        {
             Ok(_) => return Ok(()),
             Err(e) => {
-                if attempt < MAX_RETRIES {
-                    let delay = INITIAL_DELAY_MS * 2u64.pow(attempt - 1);
-                    warn!(
+                if attempt < config.max_retries {
+                    let delay = config.initial_delay_ms * 2u64.pow(attempt - 1);
+                    lighty_core::trace_warn!(
                         "[Retry {}/{}] Failed to download {}: {}. Retrying in {}ms...",
-                        attempt, MAX_RETRIES, url, e, delay
+                        attempt, config.max_retries, url, e, delay
                     );
                     let _ = fs::remove_file(&dest).await;
                     tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
@@ -82,10 +115,19 @@ pub async fn download_large_file(url: String, dest: PathBuf) -> InstallerResult<
         }
     }
 
-    Err(last_error.unwrap())
+    Err(last_error.unwrap_or_else(|| {
+        InstallerError::DownloadFailed(format!(
+            "Download failed after {} retries without specific error details: {}",
+            config.max_retries, url
+        ))
+    }))
 }
 
-async fn download_large_file_once(url: &str, dest: &PathBuf) -> InstallerResult<()> {
+async fn download_large_file_once(
+    url: &str,
+    dest: &PathBuf,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
     let response = CLIENT.get(url).send().await?;
 
     if !response.status().is_success() {
@@ -107,6 +149,14 @@ async fn download_large_file_once(url: &str, dest: &PathBuf) -> InstallerResult<
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         writer.write_all(&chunk).await?;
+
+        // Emit install progress event for this chunk
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Launch(LaunchEvent::InstallProgress {
+                bytes: chunk.len() as u64,
+            }));
+        }
     }
 
     writer.flush().await?;
@@ -114,15 +164,28 @@ async fn download_large_file_once(url: &str, dest: &PathBuf) -> InstallerResult<
 }
 
 /// Downloads multiple large files with concurrency limit
-pub async fn download_with_concurrency_limit(tasks: Vec<(String, PathBuf)>) -> InstallerResult<()> {
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
+pub async fn download_with_concurrency_limit(
+    tasks: Vec<(String, PathBuf)>,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
+    let config = get_config();
+    let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
     let futures: Vec<_> = tasks
         .into_iter()
         .map(|(url, dest)| {
             let sem = semaphore.clone();
             async move {
-                let _permit = sem.acquire().await.unwrap();
-                download_large_file(url, dest).await
+                let _permit = sem.acquire().await
+                    .map_err(|_| InstallerError::DownloadFailed(
+                        "Download concurrency semaphore closed".into()
+                    ))?;
+                download_large_file(
+                    url,
+                    dest,
+                    #[cfg(feature = "events")]
+                    event_bus,
+                )
+                .await
             }
         })
         .collect();
@@ -132,15 +195,28 @@ pub async fn download_with_concurrency_limit(tasks: Vec<(String, PathBuf)>) -> I
 }
 
 /// Downloads multiple small files with concurrency limit
-pub async fn download_small_with_concurrency_limit(tasks: Vec<(String, PathBuf)>) -> InstallerResult<()> {
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
+pub async fn download_small_with_concurrency_limit(
+    tasks: Vec<(String, PathBuf)>,
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+) -> InstallerResult<()> {
+    let config = get_config();
+    let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
     let futures: Vec<_> = tasks
         .into_iter()
         .map(|(url, dest)| {
             let sem = semaphore.clone();
             async move {
-                let _permit = sem.acquire().await.unwrap();
-                download_small_file(url, dest).await
+                let _permit = sem.acquire().await
+                    .map_err(|_| InstallerError::DownloadFailed(
+                        "Download concurrency semaphore closed".into()
+                    ))?;
+                download_small_file(
+                    url,
+                    dest,
+                    #[cfg(feature = "events")]
+                    event_bus,
+                )
+                .await
             }
         })
         .collect();

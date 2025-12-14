@@ -42,7 +42,7 @@ impl Query for QuiltQuery {
             "https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json",
             version.minecraft_version(), version.loader_version()
         );
-        tracing::debug!(url = %manifest_url, loader = "quilt", "Fetching manifest");
+        lighty_core::trace_debug!(url = %manifest_url, loader = "quilt", "Fetching manifest");
         let manifest: QuiltMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
         Ok(manifest)
     }
@@ -148,10 +148,12 @@ fn extract_main_class(full_data: &QuiltMetaData) -> MainClass {
 
 
 async fn extract_libraries(full_data: &QuiltMetaData) -> Result<Vec<Library>> {
-    let libraries = full_data.libraries.clone();
-    let futures = libraries.into_iter().map(|lib| {
+    let futures = full_data.libraries.iter().map(|lib| {
+        let lib_name = lib.name.clone();
+        let lib_url = lib.url.clone();
+
         async move {
-            let (path, full_url) = maven_artifact_to_path_and_url(&lib.name, &lib.url);
+            let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, &lib_url);
 
             // Lancer SHA1 et Size en parallèle avec tokio::join!
             let (sha1, size) = tokio::join!(
@@ -160,7 +162,7 @@ async fn extract_libraries(full_data: &QuiltMetaData) -> Result<Vec<Library>> {
             );
 
             Library {
-                name: lib.name,
+                name: lib_name,
                 url: Some(full_url),
                 path: Some(path),
                 sha1,

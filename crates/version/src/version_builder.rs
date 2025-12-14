@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::{fmt::Debug,
+          path::{Path, PathBuf}
+};
 use once_cell::sync::Lazy;
 use directories::ProjectDirs;
 use lighty_loaders::types::VersionInfo;
@@ -96,7 +98,7 @@ impl<'a, L> VersionBuilder<'a, L> {
     }
 }
 
-impl<'a, L: Clone + Send + Sync + std::fmt::Debug> VersionInfo for VersionBuilder<'a, L> {
+impl<'a, L: Clone + Send + Sync + Debug> VersionInfo for VersionBuilder<'a, L> {
     type LoaderType = L;
 
     fn name(&self) -> &str {
@@ -125,7 +127,7 @@ impl<'a, L: Clone + Send + Sync + std::fmt::Debug> VersionInfo for VersionBuilde
 }
 
 // Implémentation pour &VersionBuilder (permet de passer des références)
-impl<'a, 'b, L: Clone + Send + Sync + std::fmt::Debug> VersionInfo for &'b VersionBuilder<'a, L> {
+impl<'a, 'b, L: Clone + Send + Sync + Debug> VersionInfo for &'b VersionBuilder<'a, L> {
     type LoaderType = L;
 
     fn name(&self) -> &str {

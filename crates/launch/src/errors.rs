@@ -28,7 +28,7 @@ pub enum InstallerError {
     DownloadFailed(String),
 
     #[error("Zip error: {0}")]
-    Zip(#[from] zip::result::ZipError),
+    Zip(#[from] async_zip::error::ZipError),
 }
 
 pub type InstallerResult<T> = std::result::Result<T, InstallerError>;

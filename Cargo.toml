@@ -2,6 +2,7 @@
 members = [
     "crates/core",
     "crates/auth",
+    "crates/event",
     "crates/java",
     "crates/launch",
     "crates/loaders",
@@ -11,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.6.3"
+version = "0.8.2"
 edition = "2021"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
@@ -45,13 +46,14 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { version = "0.6.2", path = "crates/core" }
-lighty-auth = { version = "0.6.2", path = "crates/auth" }
-lighty-java = { version = "0.6.2", path = "crates/java" }
-lighty-launch = { version = "0.6.2", path = "crates/launch" }
-lighty-loaders = { version = "0.6.2", path = "crates/loaders" }
-lighty-version = { version = "0.6.2", path = "crates/version" }
-lighty-tauri = { version = "0.6.2", path = "crates/tauri" }
+lighty-core = { version = "0.8.2", path = "crates/core" }
+lighty-auth = { version = "0.8.2", path = "crates/auth" }
+lighty-event = { version = "0.8.2", path = "crates/event" }
+lighty-java = { version = "0.8.2", path = "crates/java" }
+lighty-launch = { version = "0.8.2", path = "crates/launch" }
+lighty-loaders = { version = "0.8.2", path = "crates/loaders" }
+lighty-version = { version = "0.8.2", path = "crates/version" }
+lighty-tauri = { version = "0.8.2", path = "crates/tauri" }
 
 # ---- Async Runtime ----
 tokio = { version = "1.48", features = [
@@ -89,6 +91,7 @@ async-trait = "0.1"
 
 # ---- Error Handling ----
 thiserror = "2.0"
+anyhow = "1.0"
 # ---- Logging ----
 tracing = { version = "0.1", features = ["log"] }
 
@@ -133,17 +136,18 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # Re-export internal crates
 lighty-core = { workspace = true }
 lighty-auth = { workspace = true }
+lighty-event = { workspace = true, optional = true }
 lighty-java = { workspace = true }
 lighty-launch = { workspace = true }
 lighty-loaders = { workspace = true }
 lighty-version = { workspace = true }
-lighty-tauri = { version = "0.6.2", path = "crates/tauri", optional = true }
+lighty-tauri = { version = "0.8.2", path = "crates/tauri", optional = true }
 
 # Required for examples
 tokio = { workspace = true }
 directories = { workspace = true }
 once_cell = { workspace = true }
-tracing = { workspace = true }
+tracing = { workspace = true, optional = true }
 
 # ============================================
 # DEV DEPENDENCIES - Uniquement pour tests
@@ -154,6 +158,7 @@ tokio-test = { workspace = true }
 tempfile = { workspace = true }
 criterion = { workspace = true }
 tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
 
 # ============================================
 # FEATURES - Activation optionnelle
@@ -172,6 +177,19 @@ all-loaders = ["lighty-loaders/all-loaders"]
 
 # Tauri integration
 tauri-commands = ["lighty-tauri"]
+
+# Event system
+events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
+
+# Logging
+tracing = [
+    "dep:tracing",
+    "lighty-core/tracing",
+    "lighty-auth/tracing",
+    "lighty-java/tracing",
+    "lighty-launch/tracing",
+    "lighty-loaders/tracing",
+]
 
 default = []
 
@@ -207,37 +225,5 @@ lto = "fat"            # LTO agressif
 # ============================================
 
 [[example]]
-name = "fabric"
-path = "examples/fabric.rs"
-required-features = ["fabric"]
-
-[[example]]
-name = "forge"
-path = "examples/forge.rs"
-required-features = ["forge"]
-
-[[example]]
-name = "forge_legacy"
-path = "examples/forge_legacy.rs"
-required-features = ["forge_legacy"]
-
-[[example]]
-name = "neoforge"
-path = "examples/neoforge.rs"
-required-features = ["neoforge"]
-
-[[example]]
-name = "quilt"
-path = "examples/quilt.rs"
-required-features = ["quilt"]
-
-[[example]]
-name = "vanilla"
-path = "examples/vanilla.rs"
-required-features = ["vanilla"]
-
-
-[[example]]
-name = "lighty_updater"
-path = "examples/lighty_updater.rs"
-required-features = ["lighty_updater"]
+name = "vanilla_with_events"
+required-features = ["events"]

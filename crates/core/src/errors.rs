@@ -54,5 +54,18 @@ pub type SystemResult<T> = Result<T, SystemError>;
 /// Type alias for extraction operations results
 pub type ExtractResult<T> = Result<T, ExtractError>;
 
+/// Errors related to application state initialization
+#[derive(Debug, Error)]
+pub enum AppStateError {
+    #[error("Failed to create project directories")]
+    ProjectDirsCreation,
+
+    #[error("AppState not initialized")]
+    NotInitialized,
+}
+
 /// Type alias for download operations results
 pub type DownloadResult<T> = Result<T, DownloadError>;
+
+/// Type alias for app state operations results
+pub type AppStateResult<T> = Result<T, AppStateError>;

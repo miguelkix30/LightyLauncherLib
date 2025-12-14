@@ -19,15 +19,22 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 lighty-tauri/
 └── src/
     ├── lib.rs              # Module declarations and re-exports
-    ├── core.rs             # AppState and core types
+    ├── core.rs             # Core types (re-exports AppState from lighty-core)
     ├── tauri_commands.rs   # Main command exports
     └── commands/           # Command implementations
         ├── mod.rs
-        ├── java.rs         # Java distribution commands
-        ├── launch.rs       # Launch command
-        ├── loaders.rs      # Loader enumeration
-        ├── path.rs         # Path utilities
-        ├── version.rs      # Version checking
+        ├── auth/           # Authentication commands
+        │   └── mod.rs      # Offline, Microsoft, Azuriom
+        ├── core/           # Core commands
+        │   └── mod.rs      # AppState init, path utilities
+        ├── java/           # Java distribution commands
+        │   └── mod.rs
+        ├── launch/         # Launch command
+        │   └── mod.rs
+        ├── loaders/        # Loader enumeration
+        │   └── mod.rs
+        ├── version/        # Version checking
+        │   └── mod.rs
         └── utils/          # Utilities
             ├── mod.rs
             └── parse.rs    # Configuration parsing
@@ -39,9 +46,9 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "0.6.3", features = ["tauri-commands"] }
+lighty-launcher = { version = "0.8.2", features = ["tauri-commands"] }
 # or directly
-lighty-tauri = "0.6.3"
+lighty-tauri = "0.8.2"
 ```
 
 ### Backend Setup
@@ -51,19 +58,22 @@ use lighty_tauri::tauri_commands::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_state = AppState::new(
-        "com".to_string(),
-        "MyLauncher".to_string(),
-        "".to_string()
-    );
-
     tauri::Builder::default()
-        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
-            launch,
-            get_loaders,
-            get_java_distributions,
+            // Core
+            init_app_state,
             get_launcher_path,
+            // Auth
+            authenticate_offline,
+            authenticate_microsoft,
+            authenticate_azuriom,
+            // Launch
+            launch,
+            // Java
+            get_java_distributions,
+            // Loaders
+            get_loaders,
+            // Version
             check_version_exists,
         ])
         .run(tauri::generate_context!())
@@ -76,6 +86,31 @@ pub fn run() {
 ```typescript
 import { invoke } from '@tauri-apps/api/tauri';
 
+// Initialize app state (REQUIRED - call first!)
+await invoke('init_app_state', {
+  qualifier: 'com',
+  organization: 'example',
+  application: 'MyLauncher'
+});
+
+// Authenticate (Offline)
+const profile = await invoke('authenticate_offline', {
+  username: 'PlayerName'
+});
+console.log(profile); // { username: 'PlayerName', uuid: '...', accessToken: null }
+
+// Authenticate (Microsoft)
+const msProfile = await invoke('authenticate_microsoft', {
+  clientId: 'your-azure-client-id'
+});
+
+// Authenticate (Azuriom)
+const azProfile = await invoke('authenticate_azuriom', {
+  url: 'https://your-server.com',
+  username: 'player',
+  password: 'password123'
+});
+
 // Launch a Minecraft version
 await invoke('launch', {
   versionConfig: {
@@ -85,19 +120,28 @@ await invoke('launch', {
     minecraftVersion: '1.21',
   },
   launchConfig: {
-    username: 'PlayerName',
-    uuid: '00000000-0000-0000-0000-000000000000',
+    username: profile.username,
+    uuid: profile.uuid,
     javaDistribution: 'temurin',
   },
 });
 
 // Get available loaders
 const loaders = await invoke('get_loaders');
-console.log(loaders); // ['vanilla', 'fabric', 'quilt', 'forge', 'neoforge']
+console.log(loaders);
+// [
+//   { name: 'vanilla', displayName: 'Vanilla' },
+//   { name: 'fabric', displayName: 'Fabric' },
+//   ...
+// ]
 
 // Get Java distributions
 const javaDistributions = await invoke('get_java_distributions');
-console.log(javaDistributions); // ['temurin', 'graalvm']
+console.log(javaDistributions);
+// [
+//   { name: 'temurin', displayName: 'Eclipse Temurin' },
+//   { name: 'graalvm', displayName: 'GraalVM' }
+// ]
 
 // Get launcher directory path
 const launcherPath = await invoke('get_launcher_path');
@@ -110,35 +154,148 @@ const exists = await invoke('check_version_exists', {
 console.log(exists); // true or false
 ```
 
+## Event System
+
+With the `events` feature enabled, you can subscribe to real-time events from the launcher:
+
+```rust
+use lighty_tauri::events::subscribe_to_events;
+use lighty_event::EventBus;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .setup(|app| {
+            // Create event bus
+            let event_bus = EventBus::new(100);
+
+            // Subscribe to events (will emit to frontend)
+            subscribe_to_events(app.handle(), event_bus.clone());
+
+            // Store event_bus in state for use in commands
+            app.manage(event_bus);
+
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error running tauri application");
+}
+```
+
+### Frontend - Listening to Events
+
+```typescript
+import { listen } from '@tauri-apps/api/event';
+
+// Listen to all launcher events
+await listen('lighty-event', (event) => {
+  const { eventType, data } = event.payload;
+
+  switch(eventType) {
+    case 'auth':
+      console.log('Auth event:', data);
+      break;
+    case 'java':
+      console.log('Java event:', data);
+      // e.g., { type: 'DownloadProgress', current: 50, total: 100 }
+      break;
+    case 'launch':
+      console.log('Launch event:', data);
+      break;
+    case 'loader':
+      console.log('Loader event:', data);
+      break;
+    case 'core':
+      console.log('Core event:', data);
+      // e.g., { type: 'DownloadStarted', url: '...', file: '...' }
+      break;
+  }
+});
+```
+
 ## Available Commands
 
-### launch
+### Core Commands
+
+#### init_app_state
+
+Initialize the application state. **Must be called first before any other command!**
+
+**Parameters:**
+- `qualifier`: Qualifier (e.g., "com")
+- `organization`: Organization name
+- `application`: Application name
+
+**Returns:** `Result<(), String>`
+
+#### get_launcher_path
+
+Get the launcher data directory path.
+
+**Returns:** `String`
+
+### Authentication Commands
+
+#### authenticate_offline
+
+Authenticate in offline mode (no network required).
+
+**Parameters:**
+- `username`: Player username
+
+**Returns:** `AuthResult { username: String, uuid: String, accessToken: Option<String> }`
+
+#### authenticate_microsoft
+
+Authenticate using Microsoft OAuth 2.0.
+
+**Parameters:**
+- `client_id`: Azure AD application client ID
+
+**Returns:** `AuthResult`
+
+#### authenticate_azuriom
+
+Authenticate using Azuriom CMS.
+
+**Parameters:**
+- `url`: Azuriom instance base URL
+- `username`: Username
+- `password`: Password
+
+**Returns:** `AuthResult`
+
+### Launch Commands
+
+#### launch
 
 Launch a Minecraft version.
 
 **Parameters:**
-- `version_config`: Version configuration (name, loader, loader version, MC version)
-- `launch_config`: Launch configuration (username, UUID, Java distribution)
+- `version_config`: Version configuration (name, loader, loader_version, minecraft_version)
+- `launch_config`: Launch configuration (username, uuid, java_distribution)
 
-### get_loaders
+**Returns:** `LaunchResult { success: bool, message: String }`
 
-Get list of available mod loaders.
+### Java Commands
 
-**Returns:** `Vec<String>`
-
-### get_java_distributions
+#### get_java_distributions
 
 Get list of available Java distributions.
 
-**Returns:** `Vec<String>`
+**Returns:** `Vec<JavaDistInfo { name: String, display_name: String }>`
 
-### get_launcher_path
+### Loader Commands
 
-Get the launcher directory path.
+#### get_loaders
 
-**Returns:** `String`
+Get list of available mod loaders.
 
-### check_version_exists
+**Returns:** `Vec<LoaderInfo { name: String, display_name: String }>`
+
+### Version Commands
+
+#### check_version_exists
 
 Check if a version directory exists.
 
@@ -146,6 +303,15 @@ Check if a version directory exists.
 - `version_name`: Name of the version
 
 **Returns:** `bool`
+
+#### delete_version
+
+Delete a version directory.
+
+**Parameters:**
+- `version_name`: Name of the version to delete
+
+**Returns:** `Result<(), String>`
 
 ## Error Handling
 

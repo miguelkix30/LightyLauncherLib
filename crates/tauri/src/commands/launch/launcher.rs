@@ -2,6 +2,7 @@ use crate::commands::utils::parse::{parse_java_distribution, parse_loader};
 use crate::core::{AppState, LaunchConfig, LaunchResult, VersionConfig};
 use lighty_launch::launch::Launch;
 use lighty_version::VersionBuilder as Version;
+use lighty_auth::UserProfile;
 
 #[tauri::command]
 pub async fn launch(
@@ -19,8 +20,22 @@ pub async fn launch(
         AppState::get_project_dirs(),
     );
 
+    // Create UserProfile from username and uuid
+    let profile = UserProfile {
+        id: None,
+        username: launch_config.username.clone(),
+        uuid: launch_config.uuid,
+        access_token: None,
+        email: None,
+        email_verified: false,
+        money: None,
+        role: None,
+        banned: false,
+    };
+
     match version
-        .launch(&launch_config.username, &launch_config.uuid, java_dist)
+        .launch(&profile, java_dist)
+        .run()
         .await
     {
         Ok(()) => Ok(LaunchResult {
