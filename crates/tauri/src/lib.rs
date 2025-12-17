@@ -12,7 +12,7 @@ pub use core::*;
 pub use events::*;
 
 #[cfg(feature = "tauri-commands")]
-use tauri::{plugin::TauriPlugin, Runtime};
+use tauri::{plugin::{Builder, TauriPlugin}, Runtime};
 
 /// Creates the Lighty Launcher Tauri plugin with all commands registered
 ///
@@ -39,7 +39,7 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
 
     println!("[LightyLauncher] Initializing Tauri plugin...");
 
-    let plugin = tauri_plugin::Builder::new("lighty-launcher")
+    let plugin = Builder::new("lighty-launcher")
         .invoke_handler(tauri::generate_handler![
             init_app_state,
             get_launcher_path,

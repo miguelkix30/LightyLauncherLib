@@ -23,7 +23,6 @@ lighty-event = { workspace = true, optional = true }
 
 # Tauri
 tauri = { workspace = true, optional = true }
-tauri-plugin = { version = "2", optional = true }
 
 # Async Runtime
 tokio.workspace = true
@@ -43,7 +42,7 @@ once_cell.workspace = true
 directories.workspace = true
 
 [features]
-tauri-commands = ["dep:tauri", "dep:tauri-plugin"]
+tauri-commands = ["dep:tauri"]
 events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
 default = ["tauri-commands"]
 
