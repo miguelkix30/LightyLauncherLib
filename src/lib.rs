@@ -344,7 +344,19 @@ pub mod tauri {
     //! - Loader listing
     //! - Version management
     //! - Path utilities
+    //!
+    //! ## Quick Start
+    //!
+    //! ```no_run
+    //! use lighty_launcher::tauri::lighty_plugin;
+    //!
+    //! tauri::Builder::default()
+    //!     .plugin(lighty_plugin())
+    //!     .run(tauri::generate_context!())
+    //!     .expect("error running tauri application");
+    //! ```
 
+    pub use lighty_tauri::lighty_plugin;
     pub use lighty_tauri::commands::*;
     pub use lighty_tauri::core::{
         AppState,

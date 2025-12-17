@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-auth"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "lighty-core",
  "lighty-event",
@@ -2157,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-core"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "async-compression",
  "async_zip",
@@ -2183,7 +2183,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-event"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "serde",
  "thiserror 2.0.16",
@@ -2192,7 +2192,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-java"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "lighty-core",
  "lighty-event",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-launch"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "async-trait",
  "async_zip",
@@ -2233,7 +2233,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-launcher"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2256,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-loaders"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "async-trait",
  "async_zip",
@@ -2277,7 +2277,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-tauri"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "directories",
  "lighty-auth",
@@ -2298,7 +2298,7 @@ dependencies = [
 
 [[package]]
 name = "lighty-version"
-version = "0.8.2"
+version = "0.8.6"
 dependencies = [
  "async-trait",
  "directories",

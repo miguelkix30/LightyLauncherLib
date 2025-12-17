@@ -9,6 +9,7 @@
 !examples/
 
 # Allow root files
+!LICENCE
 !README.md
 !Cargo.toml
 !Cargo.lock

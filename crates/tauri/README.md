@@ -46,40 +46,35 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "0.8.2", features = ["tauri-commands"] }
-# or directly
-lighty-tauri = "0.8.2"
+lighty-launcher = { version = "0.8.2", features = ["tauri-commands", "all-loaders"] }
+tauri = { version = "2", features = [] }
 ```
 
 ### Backend Setup
 
+The easiest way to integrate LightyLauncher with Tauri is to use the **plugin**:
+
 ```rust
-use lighty_tauri::tauri_commands::*;
+use lighty_launcher::tauri::lighty_plugin;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            // Core
-            init_app_state,
-            get_launcher_path,
-            // Auth
-            authenticate_offline,
-            authenticate_microsoft,
-            authenticate_azuriom,
-            // Launch
-            launch,
-            // Java
-            get_java_distributions,
-            // Loaders
-            get_loaders,
-            // Version
-            check_version_exists,
-        ])
+        .plugin(lighty_plugin())
         .run(tauri::generate_context!())
         .expect("error running tauri application");
 }
 ```
+
+That's it! All commands are automatically registered and ready to use from your frontend.
+
+### Why Use the Plugin?
+
+The plugin approach is recommended because:
+- ✅ **Simple**: One line of code to add all commands
+- ✅ **No macro issues**: Avoids cross-crate macro visibility problems
+- ✅ **Future-proof**: New commands are automatically available when you update
+- ✅ **Type-safe**: Full TypeScript type support on the frontend
 
 ### Frontend Usage (TypeScript/JavaScript)
 
@@ -158,13 +153,19 @@ console.log(exists); // true or false
 
 With the `events` feature enabled, you can subscribe to real-time events from the launcher:
 
+```toml
+[dependencies]
+lighty-launcher = { version = "0.8.2", features = ["tauri-commands", "all-loaders", "events"] }
+```
+
 ```rust
-use lighty_tauri::events::subscribe_to_events;
+use lighty_launcher::tauri::lighty_plugin;
 use lighty_event::EventBus;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(lighty_plugin())
         .setup(|app| {
             // Create event bus
             let event_bus = EventBus::new(100);

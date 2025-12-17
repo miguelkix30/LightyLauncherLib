@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.8.2"
+version = "0.8.6"
 edition = "2021"
 authors = ["Hamadi <dev.hamadipro@gmail.com>"]
 license = "MIT"
@@ -46,14 +46,14 @@ path = "src/lib.rs"
 
 [workspace.dependencies]
 # Internal crates
-lighty-core = { version = "0.8.2", path = "crates/core" }
-lighty-auth = { version = "0.8.2", path = "crates/auth" }
-lighty-event = { version = "0.8.2", path = "crates/event" }
-lighty-java = { version = "0.8.2", path = "crates/java" }
-lighty-launch = { version = "0.8.2", path = "crates/launch" }
-lighty-loaders = { version = "0.8.2", path = "crates/loaders" }
-lighty-version = { version = "0.8.2", path = "crates/version" }
-lighty-tauri = { version = "0.8.2", path = "crates/tauri" }
+lighty-core = { version = "0.8.6", path = "crates/core" }
+lighty-auth = { version = "0.8.6", path = "crates/auth" }
+lighty-event = { version = "0.8.6", path = "crates/event" }
+lighty-java = { version = "0.8.6", path = "crates/java" }
+lighty-launch = { version = "0.8.6", path = "crates/launch" }
+lighty-loaders = { version = "0.8.6", path = "crates/loaders" }
+lighty-version = { version = "0.8.6", path = "crates/version" }
+lighty-tauri = { version = "0.8.6", path = "crates/tauri" }
 
 # ---- Async Runtime ----
 tokio = { version = "1.48", features = [
@@ -141,7 +141,7 @@ lighty-java = { workspace = true }
 lighty-launch = { workspace = true }
 lighty-loaders = { workspace = true }
 lighty-version = { workspace = true }
-lighty-tauri = { version = "0.8.2", path = "crates/tauri", optional = true }
+lighty-tauri = { workspace = true, optional = true }
 
 # Required for examples
 tokio = { workspace = true }
@@ -176,7 +176,7 @@ lighty_updater = ["lighty-loaders/lighty_updater"]
 all-loaders = ["lighty-loaders/all-loaders"]
 
 # Tauri integration
-tauri-commands = ["lighty-tauri"]
+tauri-commands = ["lighty-tauri", "lighty-tauri/tauri-commands"]
 
 # Event system
 events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
