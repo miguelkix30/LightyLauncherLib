@@ -1,0 +1,54 @@
+"$schema" = "https://schema.tauri.app/config/plugins/permission-schema.json"
+
+[[permission]]
+identifier = "allow-all"
+description = "Allows all commands for the lighty-launcher plugin"
+commands.allow = [
+    "init_app_state",
+    "get_launcher_path",
+    "authenticate_offline",
+    "authenticate_microsoft",
+    "authenticate_azuriom",
+    "launch",
+    "get_java_distributions",
+    "get_loaders",
+    "check_version_exists"
+]
+
+[[permission]]
+identifier = "allow-auth"
+description = "Allows authentication commands"
+commands.allow = [
+    "authenticate_offline",
+    "authenticate_microsoft",
+    "authenticate_azuriom"
+]
+
+[[permission]]
+identifier = "allow-launch"
+description = "Allows game launching"
+commands.allow = [
+    "launch"
+]
+
+[[permission]]
+identifier = "allow-core"
+description = "Allows core initialization commands"
+commands.allow = [
+    "init_app_state",
+    "get_launcher_path"
+]
+
+[[permission]]
+identifier = "allow-metadata"
+description = "Allows metadata queries"
+commands.allow = [
+    "get_java_distributions",
+    "get_loaders",
+    "check_version_exists"
+]
+
+[[set]]
+identifier = "default"
+description = "Default permissions for the lighty-launcher plugin"
+permissions = ["allow-all"]
