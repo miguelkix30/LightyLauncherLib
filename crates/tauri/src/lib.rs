@@ -37,7 +37,9 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
     use crate::commands::loaders::*;
     use crate::commands::version::*;
 
-    tauri::plugin::Builder::new("lighty-launcher")
+    println!("🔌 [LightyLauncher] Initializing Tauri plugin...");
+
+    let plugin = tauri::plugin::Builder::new("lighty-launcher")
         .invoke_handler(tauri::generate_handler![
             init_app_state,
             get_launcher_path,
@@ -49,6 +51,23 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
             get_loaders,
             check_version_exists,
         ])
-        .build()
+        .setup(|app, _api| {
+            println!("✅ [LightyLauncher] Plugin setup complete!");
+            println!("📋 [LightyLauncher] Registered commands:");
+            println!("   - plugin:lighty-launcher|init_app_state");
+            println!("   - plugin:lighty-launcher|get_launcher_path");
+            println!("   - plugin:lighty-launcher|authenticate_offline");
+            println!("   - plugin:lighty-launcher|authenticate_microsoft");
+            println!("   - plugin:lighty-launcher|authenticate_azuriom");
+            println!("   - plugin:lighty-launcher|launch");
+            println!("   - plugin:lighty-launcher|get_java_distributions");
+            println!("   - plugin:lighty-launcher|get_loaders");
+            println!("   - plugin:lighty-launcher|check_version_exists");
+            Ok(())
+        })
+        .build();
+
+    println!("🎉 [LightyLauncher] Plugin built successfully!");
+    plugin
 }
 
