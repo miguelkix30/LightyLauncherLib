@@ -2,6 +2,8 @@
 use lighty_event::{EventBus, Event};
 #[cfg(feature = "events")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "events")]
+use tauri::Emitter;
 
 #[cfg(feature = "events")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,11 +69,11 @@ pub fn subscribe_to_events(app: tauri::AppHandle, event_bus: EventBus) {
     tokio::spawn(async move {
         let mut receiver = event_bus.subscribe();
 
-        while let Ok(event) = receiver.recv().await {
+        while let Ok(event) = receiver.next().await {
             let tauri_event = TauriEvent::from_event(event);
 
             if let Err(e) = app.emit("lighty-event", &tauri_event) {
-                tracing::error!("Failed to emit Tauri event: {:?}", e);
+                lighty_core::trace_error!("Failed to emit Tauri event: {:?}", e);
             }
         }
     });
