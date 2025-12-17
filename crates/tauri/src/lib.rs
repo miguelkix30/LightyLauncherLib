@@ -4,8 +4,13 @@ pub mod core;
 #[cfg(feature = "events")]
 pub mod events;
 
-// Re-export for convenience
-pub use commands::*;
+// Re-export for convenience - use public wildcard exports
+pub use commands::auth::*;
+pub use commands::core::*;
+pub use commands::java::*;
+pub use commands::launch::*;
+pub use commands::loaders::*;
+pub use commands::version::*;
 pub use core::*;
 
 #[cfg(feature = "events")]
