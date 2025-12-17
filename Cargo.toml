@@ -121,6 +121,7 @@ version-compare = "0.2"
 
 # ---- Tauri ----
 tauri = { version = "2" }
+tauri-plugin = { version = "2" }
 
 # ---- Dev dependencies ----
 tokio-test = "0.4"

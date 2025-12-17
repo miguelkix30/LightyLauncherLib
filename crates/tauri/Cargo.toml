@@ -9,6 +9,7 @@ homepage.workspace = true
 documentation.workspace = true
 rust-version.workspace = true
 description = "Tauri integration for Lighty Launcher"
+links = "lighty-tauri"
 
 [dependencies]
 # Workspace crates
@@ -22,6 +23,7 @@ lighty-event = { workspace = true, optional = true }
 
 # Tauri
 tauri = { workspace = true, optional = true }
+tauri-plugin = { version = "2", optional = true }
 
 # Async Runtime
 tokio.workspace = true
@@ -41,6 +43,9 @@ once_cell.workspace = true
 directories.workspace = true
 
 [features]
-tauri-commands = ["dep:tauri"]
+tauri-commands = ["dep:tauri", "dep:tauri-plugin"]
 events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
 default = ["tauri-commands"]
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

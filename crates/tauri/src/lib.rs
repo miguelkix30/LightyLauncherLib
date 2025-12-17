@@ -37,9 +37,9 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
     use crate::commands::loaders::*;
     use crate::commands::version::*;
 
-    println!("🔌 [LightyLauncher] Initializing Tauri plugin...");
+    println!("[LightyLauncher] Initializing Tauri plugin...");
 
-    let plugin = tauri::plugin::Builder::new("lighty-launcher")
+    let plugin = tauri_plugin::Builder::new("lighty-launcher")
         .invoke_handler(tauri::generate_handler![
             init_app_state,
             get_launcher_path,
@@ -52,8 +52,8 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
             check_version_exists,
         ])
         .setup(|app, _api| {
-            println!("✅ [LightyLauncher] Plugin setup complete!");
-            println!("📋 [LightyLauncher] Registered commands:");
+            println!("[LightyLauncher] Plugin setup complete!");
+            println!("[LightyLauncher] Registered commands:");
             println!("   - plugin:lighty-launcher|init_app_state");
             println!("   - plugin:lighty-launcher|get_launcher_path");
             println!("   - plugin:lighty-launcher|authenticate_offline");
@@ -67,7 +67,7 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
         })
         .build();
 
-    println!("🎉 [LightyLauncher] Plugin built successfully!");
+    println!("[LightyLauncher] Plugin built successfully!");
     plugin
 }
 
