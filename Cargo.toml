@@ -179,7 +179,7 @@ all-loaders = ["lighty-loaders/all-loaders"]
 tauri-commands = ["lighty-tauri", "lighty-tauri/tauri-commands"]
 
 # Event system
-events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
+events = ["lighty-event", "lighty-auth/events", "lighty-launch/events", "lighty-tauri/events"]
 
 # Logging
 tracing = [
