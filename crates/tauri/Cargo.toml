@@ -8,8 +8,9 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 rust-version.workspace = true
-description = "Tauri integration for Lighty Launcher"
+description = "[DEPRECATED] Tauri integration for Lighty Launcher - Use standalone Tauri plugin instead"
 links = "lighty-tauri"
+readme = "README.md"
 
 [dependencies]
 # Workspace crates

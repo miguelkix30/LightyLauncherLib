@@ -1,3 +1,17 @@
+//! # DEPRECATED: lighty-tauri crate
+//!
+//! **This crate is deprecated and will be removed in a future version.**
+//!
+//! The Tauri integration has been moved to a separate repository to maintain
+//! better separation of concerns and allow independent versioning.
+//!
+//! Please migrate to the new standalone Tauri plugin repository.
+
+#![deprecated(
+    since = "0.9.0",
+    note = "This crate is deprecated. Use the standalone Tauri plugin repository instead."
+)]
+
 pub mod commands;
 pub mod core;
 
@@ -5,21 +19,33 @@ pub mod core;
 pub mod events;
 
 // Re-export for convenience - use public wildcard exports
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use commands::auth::*;
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use commands::core::*;
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use commands::java::*;
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use commands::launch::*;
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use commands::loaders::*;
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use commands::version::*;
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use core::*;
 
 #[cfg(feature = "events")]
+#[deprecated(since = "0.9.0", note = "Use the standalone Tauri plugin instead")]
 pub use events::*;
 
 #[cfg(feature = "tauri-commands")]
 use tauri::{plugin::{Builder, TauriPlugin}, Runtime};
 
 /// Creates the Lighty Launcher Tauri plugin with all commands registered
+///
+/// # Deprecated
+///
+/// This function is deprecated. Please use the standalone Tauri plugin repository instead.
 ///
 /// # Example
 /// ```no_run
@@ -33,6 +59,10 @@ use tauri::{plugin::{Builder, TauriPlugin}, Runtime};
 ///         .expect("error running tauri application");
 /// }
 /// ```
+#[deprecated(
+    since = "0.9.0",
+    note = "Use the standalone Tauri plugin repository instead. This crate will be removed in a future version."
+)]
 #[cfg(feature = "tauri-commands")]
 pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
     use crate::commands::auth::*;

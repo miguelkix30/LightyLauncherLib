@@ -9,7 +9,7 @@
 
 A modern, modular Minecraft launcher library for Rust with full async support, real-time event system, and automatic Java management.
 
-![LightyUpdater Banner](img/banner.png)
+![LightyUpdater Banner](docs/img/banner.png)
 
 ## Features
 

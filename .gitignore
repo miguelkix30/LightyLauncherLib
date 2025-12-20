@@ -3,7 +3,6 @@
 
 # Allow folders
 !src/
-!.github/
 !.github/**
 !crates/
 !img/
