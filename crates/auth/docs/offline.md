@@ -20,7 +20,7 @@ Offline authentication provides a network-free authentication mode suitable for:
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = OfflineAuth::new("Steve");
     let profile = auth.authenticate().await?;
 

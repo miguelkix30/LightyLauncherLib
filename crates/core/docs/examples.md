@@ -6,7 +6,7 @@
 use lighty_core::{AppState, download_file, extract_archive, get_os, trace_info};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     // Initialize tracing
     #[cfg(feature = "tracing")]
     tracing_subscriber::fmt()
@@ -42,7 +42,7 @@ async fn download_and_extract(
     archive_path: &str,
     extract_to: &str,
     expected_sha1: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
+)  {
     // Download
     trace_info!("Downloading from: {}", url);
     download_file(url, archive_path, expected_sha1).await?;
@@ -91,7 +91,7 @@ use futures::future::join_all;
 
 async fn download_multiple_files(
     files: Vec<(&str, &str, Option<&str>)> // (url, path, sha1)
-) -> Result<(), Box<dyn std::error::Error>> {
+)  {
     trace_info!("Starting {} downloads", files.len());
 
     let downloads: Vec<_> = files
@@ -124,7 +124,7 @@ async fn download_multiple_files(
 ```rust
 use lighty_core::{download_file, DownloadError, trace_error};
 
-async fn robust_download(url: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn robust_download(url: &str, path: &str)  {
     match download_file(url, path, None).await {
         Ok(_) => {
             println!("Download successful");
@@ -178,7 +178,7 @@ Complete launcher initialization:
 ```rust
 use lighty_core::{AppState, get_os, trace_info};
 
-async fn initialize_launcher() -> Result<(), Box<dyn std::error::Error>> {
+async fn initialize_launcher()  {
     // 1. Initialize AppState
     let _app = AppState::new("com".into(), ".MyLauncher".into(), "".into())?;
 

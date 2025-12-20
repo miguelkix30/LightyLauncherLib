@@ -6,7 +6,7 @@
 use lighty_event::{EventBus, Event};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
 

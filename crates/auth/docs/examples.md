@@ -8,7 +8,7 @@
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = OfflineAuth::new("Steve");
     let profile = auth.authenticate().await?;
 
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = MicrosoftAuth::new("your-azure-client-id");
 
     auth.set_device_code_callback(|code, url| {
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 use lighty_auth::{azuriom::AzuriomAuth, Authenticator};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = AzuriomAuth::new(
         "https://your-server.com",
         "user@example.com",
@@ -102,7 +102,7 @@ async fn authenticate(method: AuthMethod) -> Result<UserProfile, Box<dyn std::er
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     // User selects authentication method
     let method = AuthMethod::Microsoft("client-id".to_string());
 
@@ -153,7 +153,7 @@ async fn authenticate_azuriom_with_2fa(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let profile = authenticate_azuriom_with_2fa(
         "https://your-server.com",
         "user@example.com",
@@ -227,7 +227,7 @@ async fn authenticate_with_cache(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let cache_path = Path::new("auth_cache.json");
 
     let profile = authenticate_with_cache(
@@ -252,7 +252,7 @@ use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 use lighty_event::{EventBus, Event, AuthEvent};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
 
@@ -330,7 +330,7 @@ where
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     use lighty_auth::offline::OfflineAuth;
 
     let mut auth = OfflineAuth::new("Steve");
@@ -441,7 +441,7 @@ impl Authenticator for CustomAuth {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = CustomAuth::new(
         "https://api.example.com".to_string(),
         "player".to_string(),
@@ -468,7 +468,7 @@ use lighty_auth::{
 use tokio::select;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     // Create authenticators
     let mut offline = OfflineAuth::new("Player");
     let mut microsoft = MicrosoftAuth::new("client-id");
@@ -559,7 +559,7 @@ async fn refresh_session(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let url = "https://your-server.com";
     let email = "user@example.com";
     let password = "password123";

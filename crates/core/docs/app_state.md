@@ -9,7 +9,7 @@
 ```rust
 use lighty_core::AppState;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main()  {
     // Initialize with your application details
     let _app_state = AppState::new(
         "com".to_string(),        // qualifier (reverse domain)
@@ -171,7 +171,7 @@ C:\Users\<User>\AppData\Local\<Organization>\<Application>\cache
 ```rust
 use std::thread;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main()  {
     // Initialize in main thread
     let _app = AppState::new("com".into(), ".MyLauncher".into(), "".into())?;
 
@@ -195,7 +195,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### 1. Initialize Early
 ```rust
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main()  {
     // Initialize FIRST, before any other LightyLauncher calls
     let _app = AppState::new("com".into(), ".MyLauncher".into(), "".into())?;
 

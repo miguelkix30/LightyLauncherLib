@@ -33,7 +33,7 @@ You need to register an application in Azure Active Directory:
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = MicrosoftAuth::new("your-azure-client-id");
 
     // Set callback to display device code

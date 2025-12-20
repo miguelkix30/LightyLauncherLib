@@ -10,7 +10,7 @@ Support for extracting ZIP, TAR, and TAR.GZ archives with proper error handling 
 use lighty_core::extract_archive;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     extract_archive(
         "/tmp/archive.zip",
         "/tmp/extracted"
@@ -74,7 +74,7 @@ pub enum ExtractError {
 ```rust
 use std::path::Path;
 
-async fn safe_extract(archive: &Path, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn safe_extract(archive: &Path, dest: &Path)  {
     // Check archive exists
     if !archive.exists() {
         return Err("Archive not found".into());

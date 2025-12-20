@@ -10,7 +10,7 @@ The download system provides async file downloads with SHA1 verification, retry 
 use lighty_core::download_file;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     // Download with SHA1 verification
     let path = download_file(
         "https://example.com/file.zip",

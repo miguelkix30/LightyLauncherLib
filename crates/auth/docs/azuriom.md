@@ -33,7 +33,7 @@ The authenticator uses these endpoints:
 use lighty_auth::{azuriom::AzuriomAuth, Authenticator};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main()  {
     let mut auth = AzuriomAuth::new(
         "https://your-server.com",
         "user@example.com",

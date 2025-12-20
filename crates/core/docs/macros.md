@@ -19,7 +19,7 @@ trace_error!(...)   // Error messages
 ```rust
 use lighty_core::{trace_info, trace_error};
 
-fn process_file(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn process_file(path: &str)  {
     trace_info!("Processing file: {}", path);
 
     match std::fs::read(path) {
