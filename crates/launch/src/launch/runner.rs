@@ -1,6 +1,6 @@
 use lighty_core::time_it;
 use lighty_java::jre_downloader::jre_download;
-use lighty_java::{JavaDistribution, JreError};
+use lighty_java::JavaDistribution;
 use lighty_loaders::types::version_metadata::Version;
 use crate::errors::{InstallerError, InstallerResult};
 use crate::installer::Installer;
@@ -13,6 +13,7 @@ use lighty_loaders::types::version_metadata::VersionMetaData;
 use tokio::sync::oneshot;
 use lighty_java::jre_downloader::find_java_binary;
 use lighty_java::runtime::JavaRuntime;
+use lighty_java::JreError;
 use crate::arguments::Arguments;
 use std::collections::{HashMap,HashSet};
 
@@ -115,7 +116,6 @@ where
 {
     lighty_core::trace_debug!("[Launch] Fetching metadata for loader: {:?}", builder.loader());
 
-
     let loader_name = format!("{:?}", builder.loader());
 
     #[cfg(feature = "events")]
@@ -127,14 +127,8 @@ where
         }));
     }
 
-    let metadata = match builder.loader() {
-        Loader::Vanilla => builder.get_complete().await?,
-        Loader::Fabric => builder.get_fabric_complete().await?,
-        Loader::Quilt => builder.get_quilt_complete().await?,
-        Loader::NeoForge => builder.get_neoforge_complete().await?,
-        Loader::LightyUpdater => builder.get_lighty_updater_complete().await?,
-        _ => return Err(InstallerError::UnsupportedLoader(format!("{:?}", builder.loader()))),
-    };
+    // Generic metadata fetching - automatically dispatches to the correct loader
+    let metadata = builder.get_metadata().await?;
 
     #[cfg(feature = "events")]
     if let Some(bus) = event_bus {
@@ -231,41 +225,56 @@ async fn execute_game<T>(
 where
     T: VersionInfo + Arguments,
 {
+    use crate::instance::{handle_console_streams, INSTANCE_MANAGER};
+    use crate::instance::manager::GameInstance;
+
     // Construire les arguments
     let arguments = builder.build_arguments(version, username, uuid, arg_overrides, arg_removals, jvm_overrides, jvm_removals, raw_args);
-    
-    lighty_core::trace_debug!("[Launch] Launch arguments: {:?}", arguments);
 
     // Créer JavaRuntime avec le chemin vers java.exe
     let java_runtime = JavaRuntime::new(java_path);
     lighty_core::trace_info!("[Launch] Executing game...");
 
     match java_runtime.execute(arguments, builder.game_dirs()).await {
-        Ok(mut child) => {
-            let (_tx, rx) = oneshot::channel::<()>();
+        Ok(child) => {
+            let pid = child.id().ok_or(InstallerError::NoPid)?;
 
-            if let Some(pid) = child.id() {
-                lighty_core::trace_info!("[Launch] Game launched successfully, PID: {}", pid);
-            } else {
-                lighty_core::trace_info!("[Launch] Game launched successfully, PID unavailable");
-            }
+            lighty_core::trace_info!("[Launch] Game launched successfully, PID: {}", pid);
 
-            // Affiche les logs Java en temps réel dans le terminal
-            let print_output = |_: &(), buf: &[u8]| -> lighty_java::JavaRuntimeResult<()> {
-                print!("{}", String::from_utf8_lossy(buf));
-                Ok(())
+            // Enregistrer l'instance (metadata only, no child handle)
+            let instance = GameInstance {
+                pid,
+                instance_name: builder.name().to_string(),
+                version: format!("{}-{}", builder.minecraft_version(), builder.loader_version()),
+                username: username.to_string(),
+                game_dir: builder.game_dirs().to_path_buf(),
+                started_at: std::time::SystemTime::now(),
             };
 
-            if let Err(e) = java_runtime
-                .handle_io(&mut child, print_output, print_output, rx, &())
-                .await
+            INSTANCE_MANAGER.register_instance(instance).await;
+
+            // Émettre événement InstanceLaunched
+            #[cfg(feature = "events")]
             {
-                lighty_core::trace_error!("[Launch] IO error: {}", e);
+                use lighty_event::{Event, InstanceLaunchedEvent, EVENT_BUS};
+
+                EVENT_BUS.emit(Event::InstanceLaunched(InstanceLaunchedEvent {
+                    pid,
+                    instance_name: builder.name().to_string(),
+                    version: format!("{}-{}", builder.minecraft_version(), builder.loader_version()),
+                    username: username.to_string(),
+                    timestamp: std::time::SystemTime::now(),
+                }));
             }
 
+            // Spawner le console streaming handler
+            // This takes ownership of the child and handles all I/O until exit
+            tokio::spawn(handle_console_streams(
+                pid,
+                builder.name().to_string(),
+                child,
+            ));
 
-
-            // tx.send(()); // <- à utiliser si tu veux forcer l'arrêt du process plus tard
             Ok(())
         }
         Err(e) => {

@@ -29,6 +29,9 @@ pub enum InstallerError {
 
     #[error("Zip error: {0}")]
     Zip(#[from] async_zip::error::ZipError),
+
+    #[error("Unable to get process ID from child process")]
+    NoPid,
 }
 
 pub type InstallerResult<T> = std::result::Result<T, InstallerError>;

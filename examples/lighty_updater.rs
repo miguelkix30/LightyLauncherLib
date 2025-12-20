@@ -1,49 +1,47 @@
-use lighty_launcher::{
-    auth::{OfflineAuth, Authenticator},
-    java::JavaDistribution,
-    launch::Launch,
-    version::LightyVersionBuilder,
-    loaders::LoaderExtensions
-};
-use directories::ProjectDirs;
-use once_cell::sync::Lazy;
+use lighty_launcher::prelude::*;
 
-//use tokio::{fs,io::AsyncWriteExt};
-
-
-static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
-    Lazy::new(|| {
-        ProjectDirs::from("fr", ".LightyLauncher", "")
-            .expect("Failed to create project directories")
-    });
+const QUALIFIER: &str = "fr";
+const ORGANIZATION: &str = ".LightyLauncher";
+const APPLICATION: &str = "";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    //tracing_subscriber::fmt() .with_max_level(tracing::Level::DEBUG) .init();
+    #[cfg(feature = "tracing")]
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
+    let _app_state = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
+
+    // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
+    #[cfg(feature = "events")]
+    let profile = auth.authenticate(None).await?;
+    #[cfg(not(feature = "events"))]
     let profile = auth.authenticate().await?;
 
+    // Configure LightyUpdater server URL
     let url = "http://localhost:8080";
 
-    // Pour LightyUpdater
-    let mut version = LightyVersionBuilder::new("minozia", url, &LAUNCHER_DIRECTORY);
+    // Build LightyUpdater instance
+    let mut version = LightyVersionBuilder::new("minozia", url, launcher_dir);
 
-    let manifest = version.get_lighty_updater_complete().await?;
+    // Fetch metadata to verify connection
+    let _metadata = version.get_metadata().await?;
+    trace_info!("LightyUpdater metadata fetched successfully");
 
-
-    // let content = format!("{:#?}", manifest);
-    // let path = "manifest_debug.txt";
-    // let mut file = fs::File::create(path).await?;
-    // file.write_all(content.as_bytes()).await?;
-    // file.flush().await?;
-
-
-    //dbg!(&version);
-
+    // Launch the game
     version.launch(&profile, JavaDistribution::Temurin)
         .run()
         .await?;
+
+    trace_info!("LightyUpdater launch successful!");
 
 
     Ok(())

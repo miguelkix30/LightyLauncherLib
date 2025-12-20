@@ -60,6 +60,12 @@ Event system for LightyLauncher - A simple, efficient broadcast-based event syst
 - `ExtractionProgress` - Extraction progress
 - `ExtractionCompleted` - Extraction finished
 
+### Instance Events (NEW)
+- `InstanceLaunched` - Instance started with PID
+- `ConsoleOutput` - Real-time stdout/stderr lines
+- `InstanceExited` - Instance exited with exit code
+- `InstanceDeleted` - Instance deleted from disk
+
 ## Installation
 
 Add this to your `Cargo.toml`:
@@ -170,6 +176,88 @@ async fn main() -> anyhow::Result<()> {
         .with_event_bus(&event_bus)
         .run()
         .await?;
+
+    Ok(())
+}
+```
+
+### Console Streaming Example (NEW)
+
+The global `EVENT_BUS` automatically streams instance console output:
+
+```rust
+use lighty_event::{Event, EVENT_BUS};
+use lighty_launch::InstanceControl;
+use lighty_version::VersionBuilder;
+use lighty_loaders::types::Loader;
+use lighty_auth::OfflineAuth;
+use lighty_java::JavaDistribution;
+use directories::ProjectDirs;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let launcher_dir = ProjectDirs::from("fr", ".LightyLauncher", "")
+        .expect("Failed to get project directories");
+
+    // Subscribe to global event bus
+    let mut receiver = EVENT_BUS.subscribe();
+
+    // Spawn console listener
+    tokio::spawn(async move {
+        while let Ok(event) = receiver.next().await {
+            match event {
+                Event::InstanceLaunched(e) => {
+                    println!("Instance {} launched (PID: {})", e.instance_name, e.pid);
+                    println!("Version: {}", e.version);
+                    println!("Player: {}", e.username);
+                }
+                Event::ConsoleOutput(e) => {
+                    // Stream real-time console output
+                    match e.stream {
+                        ConsoleStream::Stdout => print!("[OUT] {}", e.line),
+                        ConsoleStream::Stderr => print!("[ERR] {}", e.line),
+                    }
+                }
+                Event::InstanceExited(e) => {
+                    println!("Instance {} exited (code: {:?})", e.instance_name, e.exit_code);
+                }
+                Event::InstanceDeleted(e) => {
+                    println!("Instance {} deleted", e.instance_name);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    // Authenticate
+    let mut auth = OfflineAuth::new("Player");
+    let profile = auth.authenticate().await?;
+
+    // Build instance
+    let mut minozia = VersionBuilder::new(
+        "minozia",
+        Loader::Fabric,
+        "0.15.0",
+        "1.20.1",
+        &launcher_dir
+    );
+
+    // Launch (events are automatically emitted)
+    minozia.launch(&profile, JavaDistribution::Temurin)
+        .with_jvm_options()
+            .set("Xmx", "4G")
+            .done()
+        .run()
+        .await?;
+
+    // Get PID and manage instance
+    if let Some(pid) = minozia.get_pid() {
+        println!("Instance running with PID: {}", pid);
+
+        // Wait a bit, then close
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        minozia.close_instance(pid).await?;
+    }
 
     Ok(())
 }
@@ -398,7 +486,7 @@ let deserialized: Event = serde_json::from_str(&json).unwrap();
 ```
 lighty-event/
 ├── src/
-│   ├── lib.rs          # EventBus, EventReceiver
+│   ├── lib.rs          # EventBus, EventReceiver, EVENT_BUS
 │   ├── errors.rs       # Error types
 │   └── module/         # Event definitions
 │       ├── mod.rs      # Module exports
@@ -406,7 +494,8 @@ lighty-event/
 │       ├── core.rs     # CoreEvent
 │       ├── java.rs     # JavaEvent
 │       ├── launch.rs   # LaunchEvent
-│       └── loader.rs   # LoaderEvent
+│       ├── loader.rs   # LoaderEvent
+│       └── console.rs  # Instance events (NEW)
 └── README.md
 ```
 

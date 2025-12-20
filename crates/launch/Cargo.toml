@@ -54,6 +54,8 @@ sanitize-filename.workspace = true
 
 # Utilities
 once_cell.workspace = true
+fastrand.workspace = true
+rayon.workspace = true
 
 [features]
 default = []

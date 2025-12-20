@@ -1,0 +1,101 @@
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Child;
+
+/// Handle console streams (stdout/stderr) from a running game instance
+///
+/// This function spawns asynchronous tasks to:
+/// - Read and emit stdout lines
+/// - Read and emit stderr lines
+/// - Wait for the process to exit and emit exit event
+/// - Unregister the instance when done
+pub(crate) async fn handle_console_streams(pid: u32, instance_name: String, mut child: Child) {
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Handler stdout
+    if let Some(stdout) = stdout {
+        let instance_name = instance_name.clone();
+        tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                #[cfg(feature = "events")]
+                {
+                    use lighty_event::{ConsoleOutputEvent, ConsoleStream, Event, EVENT_BUS};
+                    use std::time::SystemTime;
+
+                    EVENT_BUS.emit(Event::ConsoleOutput(ConsoleOutputEvent {
+                        pid,
+                        instance_name: instance_name.clone(),
+                        stream: ConsoleStream::Stdout,
+                        line,
+                        timestamp: SystemTime::now(),
+                    }));
+                }
+            }
+        });
+    }
+
+    // Handler stderr
+    if let Some(stderr) = stderr {
+        let instance_name = instance_name.clone();
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                #[cfg(feature = "events")]
+                {
+                    use lighty_event::{ConsoleOutputEvent, ConsoleStream, Event, EVENT_BUS};
+                    use std::time::SystemTime;
+
+                    EVENT_BUS.emit(Event::ConsoleOutput(ConsoleOutputEvent {
+                        pid,
+                        instance_name: instance_name.clone(),
+                        stream: ConsoleStream::Stderr,
+                        line,
+                        timestamp: SystemTime::now(),
+                    }));
+                }
+            }
+        });
+    }
+
+    // Wait for process to exit
+    match child.wait().await {
+        Ok(status) => {
+            #[cfg(feature = "events")]
+            {
+                use lighty_event::{Event, InstanceExitedEvent, EVENT_BUS};
+                use std::time::SystemTime;
+
+                EVENT_BUS.emit(Event::InstanceExited(InstanceExitedEvent {
+                    pid,
+                    instance_name: instance_name.clone(),
+                    exit_code: status.code(),
+                    timestamp: SystemTime::now(),
+                }));
+            }
+
+            lighty_core::trace_info!(
+                pid = pid,
+                instance = %instance_name,
+                exit_code = ?status.code(),
+                "Instance exited"
+            );
+        }
+        Err(e) => {
+            lighty_core::trace_error!(
+                pid = pid,
+                instance = %instance_name,
+                error = %e,
+                "Error waiting for instance"
+            );
+        }
+    }
+
+    // Cleanup
+    use super::INSTANCE_MANAGER;
+    let _ = INSTANCE_MANAGER.unregister_instance(pid).await;
+}

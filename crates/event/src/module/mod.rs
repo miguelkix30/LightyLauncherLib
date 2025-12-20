@@ -8,9 +8,14 @@ pub mod core;
 pub mod java;
 pub mod launch;
 pub mod loader;
+pub mod console;
 
 pub use auth::AuthEvent;
 pub use core::CoreEvent;
 pub use java::JavaEvent;
 pub use launch::LaunchEvent;
 pub use loader::LoaderEvent;
+pub use console::{
+    ConsoleOutputEvent, ConsoleStream, InstanceDeletedEvent, InstanceExitedEvent,
+    InstanceLaunchedEvent,
+};

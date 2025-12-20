@@ -53,7 +53,7 @@ impl Query for ForgeQuery {
             )
         };
 
-        println!("[NeoForgeLoader] Installer URL: {}", installer_url);
+        lighty_core::trace_debug!("[NeoForgeLoader] Installer URL: {}", installer_url);
 
         // Créer le répertoire de profil NeoForge
         let profiles_dir = version.game_dirs.join(".neoforge");
@@ -67,15 +67,15 @@ impl Query for ForgeQuery {
             // Vérifier le SHA1 si le fichier existe
             match verify_installer_sha1(&installer_path, &installer_url).await {
                 Ok(true) => {
-                    println!("[NeoForgeLoader] Installer already exists and SHA1 is valid");
+                    lighty_core::trace_debug!("[NeoForgeLoader] Installer already exists and SHA1 is valid");
                     false
                 }
                 Ok(false) => {
-                    println!("[NeoForgeLoader] Installer exists but SHA1 mismatch, re-downloading");
+                    lighty_core::trace_debug!("[NeoForgeLoader] Installer exists but SHA1 mismatch, re-downloading");
                     true
                 }
                 Err(e) => {
-                    println!("[NeoForgeLoader] Could not verify SHA1 ({}), using existing file", e);
+                    lighty_core::trace_debug!("[NeoForgeLoader] Could not verify SHA1 ({}), using existing file", e);
                     false
                 }
             }
@@ -84,7 +84,7 @@ impl Query for ForgeQuery {
         };
 
         if needs_download {
-            println!("[NeoForgeLoader] Downloading installer to: {:?}", installer_path);
+            lighty_core::trace_debug!("[NeoForgeLoader] Downloading installer to: {:?}", installer_path);
             download_file_untracked(&installer_url, &installer_path)
                 .await
                 .map_err(|e| QueryError::Conversion {
@@ -104,7 +104,7 @@ impl Query for ForgeQuery {
         // Lire les JSONs directement depuis le JAR sans extraction
         let (install_profile, version_meta) = read_jsons_from_jar(&installer_path).await?;
 
-        println!("[NeoForgeLoader] Successfully loaded NeoForge metadata");
+        lighty_core::trace_debug!("[NeoForgeLoader] Successfully loaded NeoForge metadata");
 
         Ok(install_profile)
     }

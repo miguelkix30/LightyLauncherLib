@@ -1,37 +1,40 @@
-//NOT FINISHED
-use lighty_launcher::{
-    auth::{OfflineAuth, Authenticator},
-    java::JavaDistribution,
-    launch::Launch,
-    loaders::Loader,
-    version::VersionBuilder,
-};
-use directories::ProjectDirs;
-use once_cell::sync::Lazy;
-use tracing::info;
+//NOT FINISHED - NeoForge implementation is still in progress
+use lighty_launcher::prelude::*;
 
-static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
-    Lazy::new(|| {
-        ProjectDirs::from("fr", ".LightyLauncher", "")
-            .expect("Failed to create project directories")
-    });
+const QUALIFIER: &str = "fr";
+const ORGANIZATION: &str = ".LightyLauncher";
+const APPLICATION: &str = "";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "tracing")]
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
-    // Authentification offline
+    let _app_state = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
+
+    // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
+    #[cfg(feature = "events")]
+    let profile = auth.authenticate(None).await?;
+    #[cfg(not(feature = "events"))]
     let profile = auth.authenticate().await?;
 
-    let mut neoforge = VersionBuilder::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2", &LAUNCHER_DIRECTORY);
+    // Build and launch NeoForge instance
+    let mut neoforge = VersionBuilder::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2", launcher_dir);
 
     neoforge.launch(&profile, JavaDistribution::Temurin)
         .run()
         .await?;
 
-    info!("Launch successful!");
+    trace_info!("NeoForge launch successful!");
 
     Ok(())
 }

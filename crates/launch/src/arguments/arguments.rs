@@ -33,8 +33,6 @@ const DEFAULT_CLIENT_ID: &str = "{client-id}";
 const DEFAULT_USER_TYPE: &str = "legacy";
 const DEFAULT_USER_PROPERTIES: &str = "{}";
 const DEFAULT_VERSION_TYPE: &str = "release";
-const LAUNCHER_NAME: &str = "LightyLauncher";
-const LAUNCHER_VERSION: &str = "1.0.0";
 const CP_FLAG: &str = "-cp";
 
 pub trait Arguments {
@@ -168,9 +166,9 @@ fn create_variable_map<T: VersionInfo>(
             .unwrap_or_else(|| version.minecraft_version().into());
         map.insert(KEY_ASSETS_INDEX_NAME.into(), assets_index_name);
 
-        // Launcher
-        map.insert(KEY_LAUNCHER_NAME.into(), LAUNCHER_NAME.into());
-        map.insert(KEY_LAUNCHER_VERSION.into(), LAUNCHER_VERSION.into());
+        // Launcher - use AppState for automatic configuration
+        map.insert(KEY_LAUNCHER_NAME.into(), lighty_core::AppState::get_app_name());
+        map.insert(KEY_LAUNCHER_VERSION.into(), lighty_core::AppState::get_app_version());
 
         // Classpath
         let classpath = build_classpath(version, &builder.libraries);

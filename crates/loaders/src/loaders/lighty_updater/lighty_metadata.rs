@@ -56,18 +56,38 @@ impl ServerInfo {
 }
 
 //STRUCTURE OF LIGHTY_UPDATER METADATA
+/// Tous les champs sont optionnels car le serveur LightyUpdater
+/// peut ne pas fournir toutes les métadonnées. Les champs manquants
+/// seront complétés par le loader de base (vanilla/fabric/quilt/etc.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LightyMetadata {
     #[serde(skip)]  // Ne pas sérialiser server_info car il vient d'une autre requête
     pub server_info: Option<ServerInfo>,
-    pub main_class: MainClass,
-    pub java_version: JavaVersion,
-    pub arguments: Arguments,
-    pub libraries: Vec<Library>,
-    pub natives: Vec<Native>,
-    pub client: Client,
-    pub assets: Vec<Asset>,
-    pub mods: Vec<Mod>,
+    pub main_class: Option<MainClass>,
+    pub java_version: Option<JavaVersion>,
+    pub arguments: Option<Arguments>,
+    pub libraries: Option<Vec<Library>>,
+    pub natives: Option<Vec<Native>>,
+    pub client: Option<Client>,
+    pub assets: Option<Vec<Asset>>,
+    pub mods: Option<Vec<Mod>>,
+}
+
+impl Default for LightyMetadata {
+    fn default() -> Self {
+        Self {
+            server_info: None,
+            main_class: None,
+            java_version: None,
+            arguments: None,
+            libraries: None,
+            natives: None,
+            client: None,
+            assets: None,
+            mods: None,
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MainClass {

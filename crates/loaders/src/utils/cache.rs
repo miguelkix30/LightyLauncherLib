@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Mutex};
 use tokio::task::JoinHandle;
 
 #[derive(Debug)]
 pub struct Cache<K, V> {
     store: Arc<RwLock<HashMap<K, (V, Instant)>>>,
+    fetch_locks: Arc<RwLock<HashMap<K, Arc<Mutex<()>>>>>,
     _cleanup_handle: Option<JoinHandle<()>>,
 }
 
@@ -19,6 +20,7 @@ where
     pub fn new() -> Self {
         Self {
             store: Arc::new(RwLock::new(HashMap::new())),
+            fetch_locks: Arc::new(RwLock::new(HashMap::new())),
             _cleanup_handle: None,
         }
     }
@@ -93,6 +95,7 @@ where
 
         Self {
             store,
+            fetch_locks: Arc::new(RwLock::new(HashMap::new())),
             _cleanup_handle: Some(handle),
         }
     }
@@ -139,20 +142,63 @@ where
         None
     }
 
-    /// Get or compute with Result-returning closure
+    /// Get or compute with Result-returning closure with thundering herd protection
     /// If the closure returns an error, the error is propagated and nothing is cached
+    /// Multiple concurrent calls with the same key will only execute the closure once
     pub async fn get_or_try_insert_with<F, Fut, E>(&self, key: K, ttl: Duration, f: F) -> Result<V, E>
     where
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<V, E>>,
     {
+        // Fast path: check if value already exists
         if let Some(v) = self.get_with_ttl(&key).await {
             return Ok(v);
         }
 
-        let value = f().await?;
-        self.insert_with_ttl(key.clone(), value.clone(), ttl).await;
-        Ok(value)
+        // Get or create a lock for this specific key
+        let lock = {
+            let mut locks = self.fetch_locks.write().await;
+            locks.entry(key.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+
+        // Acquire the lock for this key (only first caller proceeds, others wait)
+        let _guard = lock.lock().await;
+
+        // Double-check: another thread might have populated the cache while we waited
+        if let Some(v) = self.get_with_ttl(&key).await {
+            // Cleanup the lock if no other waiters
+            self.cleanup_fetch_lock(&key).await;
+            return Ok(v);
+        }
+
+        // Execute the fetch (only one thread reaches here per key)
+        let result = f().await;
+
+        match result {
+            Ok(value) => {
+                self.insert_with_ttl(key.clone(), value.clone(), ttl).await;
+                self.cleanup_fetch_lock(&key).await;
+                Ok(value)
+            }
+            Err(e) => {
+                // Don't cache errors, but still cleanup the lock
+                self.cleanup_fetch_lock(&key).await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Remove fetch lock for a key if no other tasks are waiting
+    async fn cleanup_fetch_lock(&self, key: &K) {
+        let mut locks = self.fetch_locks.write().await;
+        if let Some(lock) = locks.get(key) {
+            // Check if we can acquire the lock immediately (no waiters)
+            if lock.try_lock().is_ok() {
+                locks.remove(key);
+            }
+        }
     }
 
     pub async fn clear(&self) {

@@ -96,9 +96,15 @@ pub mod event {
         LaunchEvent,
         LoaderEvent,
         CoreEvent,
+        InstanceLaunchedEvent,
+        InstanceExitedEvent,
+        ConsoleOutputEvent,
+        InstanceDeletedEvent,
+        ConsoleStream,
         EventReceiveError,
         EventTryReceiveError,
         EventSendError,
+        EVENT_BUS,
     };
 }
 
@@ -152,6 +158,9 @@ pub mod launch {
         },
         arguments::Arguments as LaunchArguments,
         errors::{InstallerError, InstallerResult},
+        InstanceControl,
+        InstanceError,
+        InstanceResult,
     };
 
     /// Launch argument keys for customization
@@ -200,6 +209,7 @@ pub mod loaders {
             Loader,
             VersionInfo,
             LoaderExtensions,
+            InstanceSize,
             version_metadata::{
                 Version,
                 VersionMetaData,
@@ -261,6 +271,8 @@ pub mod core {
         download,
         extract,
         hash,
+        app_state::AppState,
+        errors::{AppStateError, AppStateResult},
         SystemError,
         SystemResult,
         ExtractError,
@@ -384,20 +396,33 @@ pub mod prelude {
 
     // Events
     #[cfg(feature = "events")]
-    pub use crate::event::{EventBus, Event, AuthEvent, JavaEvent, LaunchEvent, LoaderEvent, CoreEvent};
+    pub use crate::event::{
+        EventBus, Event, AuthEvent, JavaEvent, LaunchEvent, LoaderEvent, CoreEvent,
+        InstanceLaunchedEvent, InstanceExitedEvent, ConsoleOutputEvent, InstanceDeletedEvent,
+        ConsoleStream, EVENT_BUS,
+    };
 
     // Java
     pub use crate::java::JavaDistribution;
 
     // Launch
-    pub use crate::launch::{Launch, LaunchBuilder, DownloaderConfig, init_downloader_config};
+    pub use crate::launch::{
+        Launch, LaunchBuilder, DownloaderConfig, init_downloader_config,
+        InstanceControl, InstanceError, InstanceResult,
+    };
     pub use crate::launch::keys::*;
 
     // Loaders
-    pub use crate::loaders::{Loader, VersionInfo, LoaderExtensions};
+    pub use crate::loaders::{Loader, VersionInfo, LoaderExtensions, InstanceSize};
 
     // Version
     pub use crate::version::{VersionBuilder, LightyVersionBuilder};
+
+    // Core utilities
+    pub use crate::core::AppState;
+
+    // Macros
+    pub use crate::macros::{trace_debug, trace_info, trace_warn, trace_error};
 }
 
 // ============================================================================

@@ -1,36 +1,39 @@
-use lighty_launcher::{
-    auth::{OfflineAuth, Authenticator},
-    java::JavaDistribution,
-    launch::Launch,
-    loaders::Loader,
-    version::VersionBuilder,
-};
-use directories::ProjectDirs;
-use once_cell::sync::Lazy;
-use tracing::info;
+use lighty_launcher::prelude::*;
 
-static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
-    Lazy::new(|| {
-        ProjectDirs::from("fr", ".LightyLauncher", "")
-            .expect("Failed to create project directories")
-    });
+const QUALIFIER: &str = "fr";
+const ORGANIZATION: &str = ".LightyLauncher";
+const APPLICATION: &str = "";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     #[cfg(feature = "tracing")]
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
-    // Authentification offline
+    let _app_state = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
+
+    // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
+    #[cfg(feature = "events")]
+    let profile = auth.authenticate(None).await?;
+    #[cfg(not(feature = "events"))]
     let profile = auth.authenticate().await?;
 
-    let mut quilt = VersionBuilder::new("quilt", Loader::Quilt, "0.17.10", "1.18.2", &LAUNCHER_DIRECTORY);
+    // Build and launch Quilt instance
+    let mut quilt = VersionBuilder::new("quilt", Loader::Quilt, "0.17.10", "1.18.2", launcher_dir);
 
     quilt.launch(&profile, JavaDistribution::Temurin)
         .run()
         .await?;
 
-    info!("Launch successful!");
+    trace_info!("Quilt launch successful!");
 
     Ok(())
 }

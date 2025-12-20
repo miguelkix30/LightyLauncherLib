@@ -2185,6 +2185,7 @@ dependencies = [
 name = "lighty-event"
 version = "0.8.6"
 dependencies = [
+ "once_cell",
  "serde",
  "thiserror 2.0.16",
  "tokio",
@@ -2210,6 +2211,7 @@ dependencies = [
  "async-trait",
  "async_zip",
  "directories",
+ "fastrand",
  "futures",
  "futures-util",
  "hex",
@@ -2220,6 +2222,7 @@ dependencies = [
  "lighty-loaders",
  "lighty-version",
  "once_cell",
+ "rayon",
  "reqwest",
  "sanitize-filename",
  "serde",

@@ -42,7 +42,6 @@ impl JavaRuntime {
         }
 
         lighty_core::trace_debug!("Spawning Java process: {:?}", &self.0);
-        lighty_core::trace_info!("Java arguments: {:?}", &arguments);
 
         // Build and spawn command
         let child = Command::new(&self.0)

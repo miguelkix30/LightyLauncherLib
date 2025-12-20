@@ -1,24 +1,23 @@
-use lighty_launcher::{
-    auth::{OfflineAuth, Authenticator},
-    java::JavaDistribution,
-    launch::{Launch, DownloaderConfig, init_downloader_config, keys::KEY_LAUNCHER_NAME},
-    loaders::Loader,
-    version::VersionBuilder,
-};
-use directories::ProjectDirs;
-use once_cell::sync::Lazy;
-//use tracing::info;
+use lighty_launcher::prelude::*;
 
-static LAUNCHER_DIRECTORY: Lazy<ProjectDirs> =
-    Lazy::new(|| {
-        ProjectDirs::from("fr", ".LightyLauncher", "")
-            .expect("Failed to create project directories")
-    });
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = ".LightyLauncher";
+const APPLICATION: &str = "";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    //#[cfg(feature = "tracing")]
-    //tracing_subscriber::fmt::init();
+    #[cfg(feature = "tracing")]
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+
+    let _app_state = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
 
     // Configure le downloader (optionnel - valeurs par défaut si non appelé)
     init_downloader_config(
@@ -29,26 +28,28 @@ async fn main() -> anyhow::Result<()> {
     }
     );
 
-    // Authentification offline
+    // Authenticate
     let mut auth = OfflineAuth::new("Hamadi");
+    #[cfg(feature = "events")]
+    let profile = auth.authenticate(None).await?;
+    #[cfg(not(feature = "events"))]
     let profile = auth.authenticate().await?;
 
-    let mut version = VersionBuilder::new("vanilla-1.21.1", Loader::Vanilla, "", "1.21.1", &LAUNCHER_DIRECTORY);
+    let mut version = VersionBuilder::new("vanilla-1.7.10", Loader::Vanilla, "", "1.7.10", launcher_dir);
 
-    version.launch(&profile, JavaDistribution::Termu)
+    version.launch(&profile, JavaDistribution::Temurin)
         .with_jvm_options()
             .set("Xmx", "4G")
             .set("Xms", "2G")
             .done()
         .with_arguments()
-            .set(KEY_LAUNCHER_NAME, "MyCustomLauncher")
             .set("width", "1920")
             .set("height", "1080")
             .done()
         .run()
         .await?;
 
-    //info!("Launch successful!");
+    trace_info!("Launch successful!");
 
     Ok(())
 }

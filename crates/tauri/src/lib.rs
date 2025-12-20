@@ -42,7 +42,7 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
     use crate::commands::loaders::*;
     use crate::commands::version::*;
 
-    println!("[LightyLauncher] Initializing Tauri plugin...");
+    lighty_core::trace_info!("[LightyLauncher] Initializing Tauri plugin...");
 
     let plugin = Builder::new("lighty-launcher")
         .invoke_handler(tauri::generate_handler![
@@ -56,23 +56,23 @@ pub fn lighty_plugin<R: Runtime>() -> TauriPlugin<R> {
             get_loaders,
             check_version_exists,
         ])
-        .setup(|app, _api| {
-            println!("[LightyLauncher] Plugin setup complete!");
-            println!("[LightyLauncher] Registered commands:");
-            println!("   - plugin:lighty-launcher|init_app_state");
-            println!("   - plugin:lighty-launcher|get_launcher_path");
-            println!("   - plugin:lighty-launcher|authenticate_offline");
-            println!("   - plugin:lighty-launcher|authenticate_microsoft");
-            println!("   - plugin:lighty-launcher|authenticate_azuriom");
-            println!("   - plugin:lighty-launcher|launch");
-            println!("   - plugin:lighty-launcher|get_java_distributions");
-            println!("   - plugin:lighty-launcher|get_loaders");
-            println!("   - plugin:lighty-launcher|check_version_exists");
+        .setup(|_app, _api| {
+            lighty_core::trace_info!("[LightyLauncher] Plugin setup complete!");
+            lighty_core::trace_info!("[LightyLauncher] Registered commands:");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|init_app_state");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|get_launcher_path");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|authenticate_offline");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|authenticate_microsoft");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|authenticate_azuriom");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|launch");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|get_java_distributions");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|get_loaders");
+            lighty_core::trace_info!("   - plugin:lighty-launcher|check_version_exists");
             Ok(())
         })
         .build();
 
-    println!("[LightyLauncher] Plugin built successfully!");
+    lighty_core::trace_info!("[LightyLauncher] Plugin built successfully!");
     plugin
 }
 

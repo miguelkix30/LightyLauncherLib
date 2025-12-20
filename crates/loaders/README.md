@@ -13,6 +13,7 @@ This is an internal crate for the LightyLauncher ecosystem. Most users should us
 - **Version Management**: Query and resolve loader versions
 - **Metadata Merging**: Combine multiple loader metadata
 - **Feature Flags**: Compile only the loaders you need
+- **Instance Size Calculation**: Calculate disk space requirements for instances
 
 ## Structure
 
@@ -47,7 +48,9 @@ lighty-loaders/
     │       └── merge_metadata.rs
     ├── types/                  # Common types
     │   ├── mod.rs              # Type declarations
-    │   └── version_metadata.rs # Version metadata structures
+    │   ├── version_metadata.rs # Version metadata structures
+    │   ├── instance_size.rs    # Instance size calculation
+    │   └── version_info.rs     # Version info trait
     ├── utils/                  # Utilities
     │   ├── mod.rs
     │   ├── cache.rs            # Dual cache system
@@ -188,6 +191,35 @@ Each cache features:
 - Configurable TTL per data type
 - Automatic cleanup
 - Thread-safe with `Arc<RwLock<HashMap>>`
+
+## Instance Size Calculation
+
+The `InstanceSize` type provides detailed information about disk space usage:
+
+```rust
+use lighty_loaders::types::InstanceSize;
+
+// Struct fields
+let size = InstanceSize {
+    libraries: 50_000_000,
+    mods: 100_000_000,
+    natives: 5_000_000,
+    client: 20_000_000,
+    assets: 300_000_000,
+    total: 475_000_000,
+};
+
+// Formatted sizes
+println!("Total: {}", InstanceSize::format(size.total));        // "453.20 MB"
+println!("Libraries: {}", InstanceSize::format(size.libraries)); // "47.68 MB"
+println!("Mods: {}", InstanceSize::format(size.mods));           // "95.37 MB"
+
+// Raw values in MB/GB
+println!("Total MB: {:.2}", size.total_mb());      // 453.20
+println!("Total GB: {:.2}", size.total_gb());      // 0.44
+```
+
+See the [`lighty-launch`](../launch/README.md) crate for instance management features.
 
 ## License
 

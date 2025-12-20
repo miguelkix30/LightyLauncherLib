@@ -54,7 +54,10 @@ pub use errors::{
     EventReceiveError, EventReceiveResult, EventSendError, EventSendResult,
     EventTryReceiveError, EventTryReceiveResult,
 };
-pub use module::{AuthEvent, CoreEvent, JavaEvent, LaunchEvent, LoaderEvent};
+pub use module::{
+    AuthEvent, ConsoleOutputEvent, ConsoleStream, CoreEvent, InstanceDeletedEvent,
+    InstanceExitedEvent, InstanceLaunchedEvent, JavaEvent, LaunchEvent, LoaderEvent,
+};
 
 /// Event bus for broadcasting events to multiple listeners
 #[derive(Clone)]
@@ -135,4 +138,32 @@ pub enum Event {
     Launch(LaunchEvent),
     Loader(LoaderEvent),
     Core(CoreEvent),
+    InstanceLaunched(InstanceLaunchedEvent),
+    InstanceExited(InstanceExitedEvent),
+    ConsoleOutput(ConsoleOutputEvent),
+    InstanceDeleted(InstanceDeletedEvent),
 }
+
+use once_cell::sync::Lazy;
+
+/// Global event bus instance
+///
+/// This static event bus is used by the library to emit events.
+/// Users can subscribe to this bus to receive all library events.
+///
+/// # Example
+/// ```no_run
+/// use lighty_event::EVENT_BUS;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let mut receiver = EVENT_BUS.subscribe();
+///
+///     tokio::spawn(async move {
+///         while let Ok(event) = receiver.next().await {
+///             println!("Received event: {:?}", event);
+///         }
+///     });
+/// }
+/// ```
+pub static EVENT_BUS: Lazy<EventBus> = Lazy::new(|| EventBus::new(1000));

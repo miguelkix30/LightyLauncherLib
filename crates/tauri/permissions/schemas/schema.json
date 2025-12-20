@@ -401,42 +401,6 @@
           "type": "string",
           "const": "deny-launch",
           "markdownDescription": "Denies the launch command without any pre-configured scope."
-        },
-        {
-          "description": "Default permissions for the lighty-launcher plugin\n#### This permission set includes:\n\n- `allow-all`",
-          "type": "string",
-          "const": "default",
-          "markdownDescription": "Default permissions for the lighty-launcher plugin\n#### This permission set includes:\n\n- `allow-all`"
-        },
-        {
-          "description": "Allows all commands for the lighty-launcher plugin",
-          "type": "string",
-          "const": "allow-all",
-          "markdownDescription": "Allows all commands for the lighty-launcher plugin"
-        },
-        {
-          "description": "Allows authentication commands",
-          "type": "string",
-          "const": "allow-auth",
-          "markdownDescription": "Allows authentication commands"
-        },
-        {
-          "description": "Allows game launching",
-          "type": "string",
-          "const": "allow-launch",
-          "markdownDescription": "Allows game launching"
-        },
-        {
-          "description": "Allows core initialization commands",
-          "type": "string",
-          "const": "allow-core",
-          "markdownDescription": "Allows core initialization commands"
-        },
-        {
-          "description": "Allows metadata queries",
-          "type": "string",
-          "const": "allow-metadata",
-          "markdownDescription": "Allows metadata queries"
         }
       ]
     }

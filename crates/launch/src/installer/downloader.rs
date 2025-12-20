@@ -19,6 +19,14 @@ use super::config::get_config;
 #[cfg(feature = "events")]
 use lighty_event::{EventBus, Event, LaunchEvent};
 
+/// Calculate exponential backoff delay with jitter to prevent thundering herd
+fn calculate_retry_delay(base_delay_ms: u64, attempt: u32) -> u64 {
+    let exponential_delay = base_delay_ms * 2u64.pow(attempt - 1);
+    // Add jitter: random value between 0% and 50% of the delay
+    let jitter = fastrand::u64(0..=exponential_delay / 2);
+    exponential_delay + jitter
+}
+
 /// Downloads small files (loaded entirely in memory)
 pub async fn download_small_file(
     url: String,
@@ -38,7 +46,7 @@ pub async fn download_small_file(
             Ok(_) => return Ok(()),
             Err(e) => {
                 if attempt < config.max_retries {
-                    let delay = config.initial_delay_ms * 2u64.pow(attempt - 1);
+                    let delay = calculate_retry_delay(config.initial_delay_ms, attempt);
                     lighty_core::trace_warn!(
                         "[Retry {}/{}] Failed to download {}: {}. Retrying in {}ms...",
                         attempt, config.max_retries, url, e, delay
@@ -102,7 +110,7 @@ pub async fn download_large_file(
             Ok(_) => return Ok(()),
             Err(e) => {
                 if attempt < config.max_retries {
-                    let delay = config.initial_delay_ms * 2u64.pow(attempt - 1);
+                    let delay = calculate_retry_delay(config.initial_delay_ms, attempt);
                     lighty_core::trace_warn!(
                         "[Retry {}/{}] Failed to download {}: {}. Retrying in {}ms...",
                         attempt, config.max_retries, url, e, delay

@@ -91,6 +91,7 @@ fn merge_arguments(vanilla: Arguments, fabric: Arguments) -> Arguments {
             args.extend(fabric.game);
             args
         },
+
         jvm: match (vanilla.jvm, fabric.jvm) {
             (Some(mut v), Some(f)) => {
                 v.extend(f);
@@ -100,6 +101,7 @@ fn merge_arguments(vanilla: Arguments, fabric: Arguments) -> Arguments {
             (None, Some(f)) => Some(f),
             (None, None) => None,
         },
+
     }
 }
 
@@ -122,6 +124,8 @@ fn merge_libraries(vanilla_libs: Vec<Library>, fabric_libs: Vec<Library>) -> Vec
 
     lib_map.into_values().collect()
 }
+
+
 
 /// Extrait "group:artifact" (sans version) pour identifier les doublons
 fn extract_artifact_key(maven_name: &str) -> String {

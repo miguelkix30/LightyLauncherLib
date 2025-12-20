@@ -37,6 +37,22 @@ impl TauriEvent {
                 event_type: "core".to_string(),
                 data: serde_json::to_value(core_event).unwrap_or(serde_json::Value::Null),
             },
+            Event::InstanceLaunched(instance_event) => Self {
+                event_type: "instance_launched".to_string(),
+                data: serde_json::to_value(instance_event).unwrap_or(serde_json::Value::Null),
+            },
+            Event::InstanceExited(instance_event) => Self {
+                event_type: "instance_exited".to_string(),
+                data: serde_json::to_value(instance_event).unwrap_or(serde_json::Value::Null),
+            },
+            Event::ConsoleOutput(console_event) => Self {
+                event_type: "console_output".to_string(),
+                data: serde_json::to_value(console_event).unwrap_or(serde_json::Value::Null),
+            },
+            Event::InstanceDeleted(instance_event) => Self {
+                event_type: "instance_deleted".to_string(),
+                data: serde_json::to_value(instance_event).unwrap_or(serde_json::Value::Null),
+            },
         }
     }
 }
@@ -72,8 +88,8 @@ pub fn subscribe_to_events(app: tauri::AppHandle, event_bus: EventBus) {
         while let Ok(event) = receiver.next().await {
             let tauri_event = TauriEvent::from_event(event);
 
-            if let Err(e) = app.emit("lighty-event", &tauri_event) {
-                lighty_core::trace_error!("Failed to emit Tauri event: {:?}", e);
+            if let Err(_e) = app.emit("lighty-event", &tauri_event) {
+                lighty_core::trace_error!("Failed to emit Tauri event: {:?}", _e);
             }
         }
     });

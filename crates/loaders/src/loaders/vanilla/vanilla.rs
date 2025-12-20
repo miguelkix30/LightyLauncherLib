@@ -100,8 +100,7 @@ impl Query for VanillaQuery {
             natives: Some(extract_natives(full_data)?),
             client: extract_client(version, full_data).ok(),
             assets_index: Some(extract_assets_index(full_data)),
-            assets: Some(extract_assets(version,full_data).await?),
-            //assets:None,
+            assets: Some(extract_assets(version, full_data).await?),
         })
     }
 }
