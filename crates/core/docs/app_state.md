@@ -25,7 +25,7 @@ fn main()  {
 ## Architecture
 
 ```mermaid
-graph TD
+flowchart TD
     A[AppState::new] --> B{OnceCell Initialized?}
     B -->|No| C[Create ProjectDirs]
     B -->|Yes| D[Return Error]
@@ -42,10 +42,6 @@ graph TD
     M[get_app_name] --> N[Get Organization]
     N --> O[Strip Leading '.']
     O --> P[Return Name]
-
-    style C fill:#4CAF50
-    style E fill:#2196F3
-    style K fill:#FF9800
 ```
 
 ## API Reference

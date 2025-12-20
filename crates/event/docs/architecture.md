@@ -3,21 +3,15 @@
 ## Design
 
 ```mermaid
-graph TD
-    A[EventBus] -->|broadcast| B[Receiver 1: UI]
-    A -->|broadcast| C[Receiver 2: Logger]
-    A -->|broadcast| D[Receiver 3: Analytics]
-
-    E[Auth Module] -->|emit| A
+flowchart TD
+    E[Auth Module] -->|emit| A[EventBus]
     F[Java Module] -->|emit| A
     G[Launch Module] -->|emit| A
     H[Loader Module] -->|emit| A
 
-    style A fill:#4CAF50
-    style E fill:#2196F3
-    style F fill:#FF9800
-    style G fill:#9C27B0
-    style H fill:#FFC107
+    A -->|broadcast| B[Receiver 1: UI]
+    A -->|broadcast| C[Receiver 2: Logger]
+    A -->|broadcast| D[Receiver 3: Analytics]
 ```
 
 ## Flow

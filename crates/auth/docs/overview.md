@@ -11,42 +11,23 @@ The `lighty-auth` crate follows a trait-based design pattern that enables:
 ## Core Architecture
 
 ```mermaid
-graph TB
-    subgraph "Public API"
-        TRAIT[Authenticator Trait]
-        PROFILE[UserProfile]
-        ERROR[AuthError]
-    end
+flowchart TD
+    TRAIT[Authenticator Trait]
 
-    subgraph "Built-in Providers"
-        OFFLINE[OfflineAuth]
-        MS[MicrosoftAuth]
-        AZ[AzuriomAuth]
-    end
+    TRAIT --> OFFLINE[OfflineAuth]
+    TRAIT --> MS[MicrosoftAuth]
+    TRAIT --> AZ[AzuriomAuth]
 
-    subgraph "External Integration"
-        EVENT[EventBus Integration]
-        HTTP[HTTP Client Pool]
-        CRYPTO[UUID Generation]
-    end
+    OFFLINE --> CRYPTO[UUID Generation]
+    OFFLINE --> PROFILE[UserProfile]
 
-    TRAIT --> OFFLINE
-    TRAIT --> MS
-    TRAIT --> AZ
+    MS --> HTTP[HTTP Client Pool]
+    MS --> EVENT[EventBus Integration]
+    MS --> PROFILE
 
-    OFFLINE --> CRYPTO
-    MS --> HTTP
-    MS --> EVENT
     AZ --> HTTP
     AZ --> EVENT
-
-    OFFLINE --> PROFILE
-    MS --> PROFILE
     AZ --> PROFILE
-
-    style TRAIT fill:#4CAF50
-    style PROFILE fill:#2196F3
-    style ERROR fill:#F44336
 ```
 
 ## Authenticator Trait

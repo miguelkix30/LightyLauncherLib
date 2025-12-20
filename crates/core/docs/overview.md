@@ -24,44 +24,21 @@
 ## Core Components
 
 ```mermaid
-graph LR
-    subgraph "Application Layer"
-        APP[Your Application]
-    end
+flowchart TD
+    APP[Your Application]
 
-    subgraph "lighty-core"
-        AS[AppState]
-        DL[Download System]
-        EX[Extract System]
-        SYS[System Detection]
-        LOG[Logging Macros]
-    end
+    APP --> AS[AppState]
+    APP --> DL[Download System]
+    APP --> EX[Extract System]
+    APP --> SYS[System Detection]
+    APP --> LOG[Logging Macros]
 
-    subgraph "External Dependencies"
-        HTTP[reqwest]
-        FS[tokio::fs]
-        ZIP[zip-rs]
-        TAR[tar-rs]
-    end
-
-    APP --> AS
-    APP --> DL
-    APP --> EX
-    APP --> SYS
-    APP --> LOG
-
-    AS --> FS
-    DL --> HTTP
+    AS --> FS[tokio::fs]
+    DL --> HTTP[reqwest]
     DL --> FS
-    EX --> ZIP
-    EX --> TAR
+    EX --> ZIP[zip-rs]
+    EX --> TAR[tar-rs]
     EX --> FS
-
-    style AS fill:#4CAF50
-    style DL fill:#2196F3
-    style EX fill:#FF9800
-    style SYS fill:#9C27B0
-    style LOG fill:#FFC107
 ```
 
 ## Module Responsibilities
