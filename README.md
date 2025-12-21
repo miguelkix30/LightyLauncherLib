@@ -244,40 +244,195 @@ JavaDistribution::Liberica   // Lightweight alternative
 
 ### `lighty_launcher::launch` - Game Launching
 
-Complete launch orchestration with customization options:
+Complete launch orchestration with customization options. The launch system handles the entire process from metadata fetching to process execution.
+
+#### Launch Flow
+
+```
+1. Prepare Metadata → 2. Install Java → 3. Install Dependencies → 4. Build Arguments → 5. Execute Game
+```
+
+#### Basic Launch
 
 ```rust
-use lighty_launcher::launch::{Launch, LaunchBuilder, DownloaderConfig, init_downloader_config};
-use lighty_launcher::launch::keys::*;
+use lighty_launcher::launch::Launch;
 
-// Configure downloader (optional)
-init_downloader_config(DownloaderConfig {
-    max_concurrent_downloads: 100,
-    max_retries: 5,
-    initial_delay_ms: 50,
-});
+version.launch(&profile, JavaDistribution::Temurin)
+    .run()
+    .await?;
+```
 
-// Launch with custom JVM options and arguments
+#### Custom JVM Options
+
+Configure memory, garbage collection, and system properties:
+
+```rust
 version.launch(&profile, JavaDistribution::Temurin)
     .with_jvm_options()
-        .set("Xmx", "4G")
-        .set("Xms", "2G")
-        .done()
-    .with_arguments()
-        .set(KEY_LAUNCHER_NAME, "MyCustomLauncher")
-        .set("width", "1920")
-        .set("height", "1080")
+        .set("Xmx", "4G")                      // Maximum heap
+        .set("Xms", "2G")                      // Initial heap
+        .set("XX:+UseG1GC", "")                // G1 garbage collector
+        .set("XX:MaxGCPauseMillis", "50")      // Max GC pause
+        .set("Dfile.encoding", "UTF-8")        // File encoding
         .done()
     .run()
     .await?;
 ```
 
-**Key Features:**
-- JVM options customization (memory, GC, system properties)
-- Game arguments customization (resolution, launcher name)
-- Automatic file verification
-- Parallel downloads with retry logic
-- Asset, library, and native management
+#### Custom Game Arguments
+
+Override window settings, placeholders, and game options:
+
+```rust
+version.launch(&profile, JavaDistribution::Temurin)
+    .with_arguments()
+        .set("width", "1920")                  // Window width
+        .set("height", "1080")                 // Window height
+        .set("fullscreen", "true")             // Fullscreen mode
+        .set("quickPlayMultiplayer", "mc.hypixel.net")  // Auto-connect server
+        .done()
+    .run()
+    .await?;
+```
+
+#### Argument Placeholders
+
+The launch system uses variable substitution for dynamic values:
+
+**Authentication Placeholders:**
+- `${auth_player_name}` - Player username
+- `${auth_uuid}` - Player UUID
+- `${auth_access_token}` - Access token or "0" (offline)
+- `${auth_xuid}` - Xbox User ID
+- `${user_type}` - User type ("legacy" or "msa")
+
+**Directory Placeholders:**
+- `${game_directory}` - Game instance directory
+- `${assets_root}` - Assets root directory
+- `${natives_directory}` - Native libraries directory
+- `${classpath}` - Java classpath (all libraries)
+
+**Version Placeholders:**
+- `${version_name}` - Minecraft version (e.g., "1.21.1")
+- `${launcher_name}` - Launcher brand name
+- `${launcher_version}` - Launcher version
+- `${assets_index_name}` - Asset index ID
+
+See [crates/launch/docs/arguments.md](crates/launch/docs/arguments.md) for complete placeholder reference.
+
+#### Installation Process
+
+The launch system automatically downloads and verifies all game files:
+
+**Phase 1: Verification** - SHA1 hash checking to skip already-downloaded files
+**Phase 2: Parallel Download** - Libraries, natives, assets, client JAR, and mods downloaded concurrently
+**Phase 3: Extraction** - Native libraries extracted to temporary directory
+
+**Installation Components:**
+- **Libraries** (~100-300 JARs, 50-100 MB) - Java dependencies
+- **Natives** (~5-15 files, 5-10 MB) - Platform-specific binaries (LWJGL, OpenAL)
+- **Assets** (~3000-10000 files, 200-500 MB) - Textures, sounds, language files
+- **Client JAR** (1 file, 20-30 MB) - Main Minecraft executable
+- **Mods** (10-200 files, variable size) - Fabric/Quilt/NeoForge modifications
+
+See [crates/launch/docs/installation.md](crates/launch/docs/installation.md) for detailed installation process.
+
+#### Instance Management
+
+Track and control running game processes:
+
+```rust
+use lighty_launch::InstanceControl;  // Must import trait!
+
+// Get process ID
+if let Some(pid) = instance.get_pid() {
+    println!("Running with PID: {}", pid);
+}
+
+// Get all PIDs (multiple processes)
+let pids = instance.get_pids();
+
+// Close instance
+if let Some(pid) = instance.get_pid() {
+    instance.close_instance(pid).await?;
+}
+
+// Delete instance completely (must not be running)
+instance.delete_instance().await?;
+
+// Calculate instance size
+let metadata = instance.get_metadata().await?;
+let size = instance.size_of_instance(&metadata);
+println!("Total size: {:.2} GB", size.total_gb());
+```
+
+**Process lifecycle:**
+1. Launch → Process spawned, PID registered
+2. Running → Console output streamed via events
+3. Exit → Process terminates, unregistered automatically
+4. Manual close → Send kill signal (SIGTERM/TASKKILL)
+
+See [crates/launch/docs/instance-control.md](crates/launch/docs/instance-control.md) for process management details.
+
+#### Complete Example with Events
+
+```rust
+use lighty_launcher::prelude::*;
+use lighty_launcher::event::{EventBus, Event, LaunchEvent};
+use lighty_launch::InstanceControl;
+
+let event_bus = EventBus::new(1000);
+let mut receiver = event_bus.subscribe();
+
+// Event listener
+tokio::spawn(async move {
+    while let Ok(event) = receiver.recv().await {
+        match event {
+            Event::Launch(LaunchEvent::DownloadingLibraries { current, total }) => {
+                println!("Libraries: {}/{}", current, total);
+            }
+            Event::Launch(LaunchEvent::DownloadingAssets { current, total }) => {
+                println!("Assets: {}/{}", current, total);
+            }
+            Event::InstanceLaunched(e) => {
+                println!("Launched: {} (PID: {})", e.instance_name, e.pid);
+            }
+            Event::ConsoleOutput(e) => {
+                println!("[{}] {}", e.pid, e.line);
+            }
+            Event::InstanceExited(e) => {
+                println!("Exited: PID {} (code: {:?})", e.pid, e.exit_code);
+            }
+            _ => {}
+        }
+    }
+});
+
+// Launch with events
+let mut version = VersionBuilder::new(/*...*/);
+let profile = auth.authenticate(Some(&event_bus)).await?;
+
+version.launch(&profile, JavaDistribution::Temurin)
+    .with_event_bus(&event_bus)
+    .with_jvm_options()
+        .set("Xmx", "6G")
+        .done()
+    .run()
+    .await?;
+
+// Get PID
+if let Some(pid) = version.get_pid() {
+    println!("Game running: {}", pid);
+}
+```
+
+**Complete Documentation:**
+- [Launch Process](crates/launch/docs/launch.md) - Complete launch workflow
+- [Arguments System](crates/launch/docs/arguments.md) - Placeholders and argument building
+- [Installation](crates/launch/docs/installation.md) - Asset/library installation details
+- [Instance Control](crates/launch/docs/instance-control.md) - Process management
+- [Events](crates/launch/docs/events.md) - Event types reference
+- [How to Use](crates/launch/docs/how-to-use.md) - Practical examples
 
 ### `lighty_launcher::loaders` - Mod Loaders
 
