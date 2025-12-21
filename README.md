@@ -25,7 +25,6 @@ A modern, modular Minecraft launcher library for Rust with full async support, r
 ```toml
 [dependencies]
 lighty-launcher = "0.8.6"
-lighty-core = "0.8.6"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -33,10 +32,7 @@ anyhow = "1.0"
 ## Quick Start
 
 ```rust
-use lighty_core::AppState;
 use lighty_launcher::prelude::*;
-use lighty_auth::{offline::OfflineAuth, Authenticator};
-use lighty_java::JavaDistribution;
 
 const QUALIFIER: &str = "com";
 const ORGANIZATION: &str = "MyLauncher";
@@ -76,6 +72,19 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 ## Documentation
+
+### 📖 Guides
+
+Comprehensive documentation in the `docs/` directory:
+
+| Guide | Description |
+|-------|-------------|
+| **[Sequence Diagrams](docs/sequence-diagrams.md)** | Visual diagrams of all workflows (launch, authentication, installation) |
+| **[Re-exports Reference](docs/reexports.md)** | Complete list of all re-exported types and their sources |
+| **[Architecture](docs/architecture.md)** | System architecture, design patterns, and module dependencies |
+| **[Examples](docs/examples.md)** | Detailed walkthrough of all examples with code explanations |
+
+### 📦 Crate Documentation
 
 Complete documentation for each crate:
 
@@ -123,19 +132,46 @@ Complete documentation for each crate:
 
 ## Examples
 
+The `examples/` directory contains ready-to-use examples for all loaders and features:
+
+| Example | Description | Features Required |
+|---------|-------------|-------------------|
+| **[vanilla.rs](examples/vanilla.rs)** | Basic Vanilla Minecraft launcher | `vanilla` |
+| **[fabric.rs](examples/fabric.rs)** | Fabric mod loader | `fabric` |
+| **[quilt.rs](examples/quilt.rs)** | Quilt mod loader | `quilt` |
+| **[neoforge.rs](examples/neoforge.rs)** | NeoForge mod loader | `neoforge` |
+| **[forge.rs](examples/forge.rs)** | Forge mod loader | `forge` |
+| **[forge_legacy.rs](examples/forge_legacy.rs)** | Legacy Forge (1.7.10-1.12.2) | `forge_legacy` |
+| **[optifine.rs](examples/optifine.rs)** | OptiFine launcher | `optifine` |
+| **[lighty_updater.rs](examples/lighty_updater.rs)** | Custom modpack server | `lighty_updater` |
+| **[with_events.rs](examples/with_events.rs)** | Complete event system & instance management | `vanilla`, `events` |
+
+### Running Examples
+
 ```bash
 # Vanilla Minecraft
-cargo run --example vanilla --features vanilla,events
+cargo run --example vanilla --features vanilla
 
-# Fabric
-cargo run --example fabric --features fabric
+# Fabric with events
+cargo run --example fabric --features fabric,events
 
-# Quilt
-cargo run --example quilt --features quilt
+# Complete demo with events and instance management
+cargo run --example with_events --features vanilla,events
 
 # LightyUpdater
 cargo run --example lighty_updater --features lighty_updater
 ```
+
+### Advanced Examples
+
+**with_events.rs** demonstrates:
+- Real-time event tracking for all operations
+- Instance lifecycle management (create, launch, monitor, close, delete)
+- Console output streaming
+- Instance size calculation
+- PID tracking and control
+
+See [docs/examples.md](docs/examples.md) for detailed example documentation.
 
 ## Cargo Features
 
