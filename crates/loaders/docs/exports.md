@@ -174,7 +174,15 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+let _app = AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+)?;
     let launcher_dir = AppState::get_project_dirs();
 
     let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);
@@ -193,7 +201,15 @@ use lighty_launcher::core::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+let _app = AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+)?;
     let launcher_dir = AppState::get_project_dirs();
 
     let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);
@@ -212,7 +228,15 @@ use lighty_core::app_state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+let _app = AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+)?;
     let launcher_dir = AppState::get_project_dirs();
 
     let instance = VersionBuilder::new("name", Loader::Vanilla, "", "1.21.1", launcher_dir);

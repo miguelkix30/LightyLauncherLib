@@ -9,12 +9,17 @@
 ```rust
 use lighty_core::AppState;
 
-fn main()  {
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // Initialize with your application details
-    let _app_state = AppState::new(
-        "com".to_string(),        // qualifier (reverse domain)
-        ".MyLauncher".to_string(), // organization
-        "".to_string(),            // application name (optional)
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
     )?;
 
     // Now you can use other LightyLauncher functions
@@ -65,10 +70,14 @@ Initializes the global application state.
 
 **Example:**
 ```rust
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
 let _app = AppState::new(
-    "com".into(),
-    ".MyLauncher".into(),
-    "".into()
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
 )?;
 ```
 
@@ -165,11 +174,21 @@ C:\Users\<User>\AppData\Local\<Organization>\<Application>\cache
 `AppState` uses `OnceCell` for thread-safe initialization:
 
 ```rust
+use lighty_core::AppState;
 use std::thread;
 
-fn main()  {
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // Initialize in main thread
-    let _app = AppState::new("com".into(), ".MyLauncher".into(), "".into())?;
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
 
     // Safe to access from multiple threads
     let handles: Vec<_> = (0..4).map(|_| {
@@ -191,9 +210,20 @@ fn main()  {
 
 ### 1. Initialize Early
 ```rust
-fn main()  {
+use lighty_core::AppState;
+
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // Initialize FIRST, before any other LightyLauncher calls
-    let _app = AppState::new("com".into(), ".MyLauncher".into(), "".into())?;
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
 
     // Now safe to use other functions
     let version = VersionBuilder::new(/*...*/);
@@ -203,7 +233,17 @@ fn main()  {
 
 ### 2. Handle Initialization Errors
 ```rust
-match AppState::new("com".into(), ".MyLauncher".into(), "".into()) {
+use lighty_core::{AppState, errors::AppStateError};
+
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+match AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+) {
     Ok(_) => println!("AppState initialized"),
     Err(AppStateError::NotInitialized) => {
         eprintln!("AppState already initialized");
@@ -216,11 +256,17 @@ match AppState::new("com".into(), ".MyLauncher".into(), "".into()) {
 
 ### 3. Organization Naming Convention
 ```rust
-// Leading '.' is stripped for display purposes
+use lighty_core::AppState;
+
+const QUALIFIER: &str = "fr";
+const ORGANIZATION: &str = "LightyLauncher";
+const APPLICATION: &str = "";
+
+// Organization name is used directly
 let _app = AppState::new(
-    "fr".into(),
-    ".LightyLauncher".into(),  // → "LightyLauncher" in game
-    "".into()
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
 )?;
 
 let name = AppState::get_app_name();

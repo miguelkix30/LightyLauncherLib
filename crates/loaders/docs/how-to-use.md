@@ -7,12 +7,16 @@
 ```rust
 use lighty_launcher::core::AppState;
 
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _app = AppState::new(
-        "com".into(),           // Qualifier
-        "MyLauncher".into(),    // Organization
-        "".into()               // Application (optional)
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
     )?;
 
     let launcher_dir = AppState::get_project_dirs();
@@ -116,6 +120,53 @@ let instance = VersionBuilder::new(
 - Crate: `lighty_loaders::loaders::neoforge`
 - Main: `lighty_launcher::loaders::neoforge`
 
+### LightyUpdater with LightyVersionBuilder
+
+For custom servers with LightyUpdater:
+
+```rust
+use lighty_launcher::prelude::*;
+
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
+
+    // LightyVersionBuilder for custom servers
+    let instance = LightyVersionBuilder::new(
+        "my-modpack",                    // Instance name
+        "https://myserver.com/api",      // Server URL
+        "1.21.1",                        // Minecraft version
+        launcher_dir
+    );
+
+    let metadata = instance.get_metadata().await?;
+
+    println!("Custom modpack: {}", metadata.id);
+
+    Ok(())
+}
+```
+
+**Exports**:
+- Builder: `lighty_version::LightyVersionBuilder`
+- Re-export: `lighty_launcher::version::LightyVersionBuilder`
+- Loader module: `lighty_loaders::loaders::lighty_updater`
+- Re-export: `lighty_launcher::loaders::lighty_updater`
+
+**For more details**, see:
+- [LightyUpdater Documentation](./loaders/lighty_updater.md)
+- [LightyUpdater GitHub Repository](https://github.com/Lighty-Launcher/LightyUpdater)
+
 ## Advanced Usage
 
 ### Query Specific Metadata
@@ -148,7 +199,15 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+let _app = AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+)?;
     let launcher_dir = AppState::get_project_dirs();
 
     // Create event bus

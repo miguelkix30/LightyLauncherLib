@@ -4,12 +4,17 @@ Core utilities and foundational components for the LightyLauncher ecosystem.
 
 ## Overview
 
+**Version**: 0.8.6
+**Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
+
 `lighty-core` provides essential building blocks used across all LightyLauncher crates:
-- **Application State Management** - Global app configuration and directory management
-- **File Operations** - Async downloads with retry logic and SHA1 verification
-- **Archive Extraction** - ZIP, TAR, and TAR.GZ support
+- **Application State** - Global app configuration and directory management
+- **Download System** - Async file downloads with SHA1 verification
+- **Archive Extraction** - ZIP, TAR, and TAR.GZ support with security
 - **System Detection** - Cross-platform OS and architecture detection
-- **HTTP Client** - Shared async HTTP client with connection pooling
+- **Hash Utilities** - SHA1 verification for files and data
+- **Logging Macros** - Unified tracing interface
+- **File Macros** - Directory creation utilities
 
 ## Quick Start
 
@@ -19,25 +24,38 @@ lighty-core = "0.8.6"
 ```
 
 ```rust
-use lighty_core::{AppState, download_file, get_os};
+use lighty_core::{AppState, system::{OS, ARCHITECTURE}};
+
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     // Initialize application state
-    let _app = AppState::new("com".into(), "MyCompany".into(), "MyApp".into()).unwrap();
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
 
-    // Detect system
-    let os = get_os();
-    println!("Running on: {:?}", os);
+    let launcher_dir = AppState::get_project_dirs();
 
-    // Download a file with SHA1 verification
-    download_file(
-        "https://example.com/file.zip",
-        "/tmp/file.zip",
-        Some("expected-sha1-hash")
-    ).await.unwrap();
+    println!("Data directory: {}", launcher_dir.data_dir().display());
+    println!("Cache directory: {}", launcher_dir.cache_dir().display());
+    println!("Running on: {:?} {:?}", OS, ARCHITECTURE);
+
+    Ok(())
 }
 ```
+
+## Features
+
+- **Thread-safe state** - Global AppState with OnceCell
+- **Secure extraction** - Path traversal protection, file size limits
+- **Smart downloads** - Progress tracking and hash verification
+- **Cross-platform** - Windows, macOS, Linux support
+- **Zero dependencies** - Minimal external dependencies for core operations
 
 ## Documentation
 
@@ -45,20 +63,25 @@ async fn main() {
 
 | Guide | Description |
 |-------|-------------|
-| [Overview](./docs/overview.md) | Architecture overview and design philosophy |
-| [Application State](./docs/app_state.md) | AppState initialization and usage |
-| [Download System](./docs/download.md) | File downloads and verification |
-| [Archive Extraction](./docs/extract.md) | Working with archives |
-| [System Detection](./docs/system.md) | Platform detection |
-| [Logging Macros](./docs/macros.md) | Using trace macros |
-| [Examples](./docs/examples.md) | Complete code examples |
+| [How to Use](./docs/how-to-use.md) | Practical usage guide with examples |
+| [Overview](./docs/overview.md) | Architecture and design philosophy |
+| [Exports](./docs/exports.md) | Complete export reference |
+| [Events](./docs/events.md) | CoreEvent types |
+| [AppState](./docs/app_state.md) | Application state management |
+| [Download](./docs/download.md) | File download system |
+| [Extract](./docs/extract.md) | Archive extraction |
+| [Hash](./docs/hash.md) | SHA1 verification utilities |
+| [System](./docs/system.md) | Platform detection |
+| [Macros](./docs/macros.md) | Logging and file macros |
+
+## Related Crates
+
+- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-event](../event/README.md)** - Event system (for CoreEvent)
+- **[lighty-loaders](../loaders/README.md)** - Uses AppState and system detection
+- **[lighty-java](../java/README.md)** - Uses download and extract
+- **[lighty-launch](../launch/README.md)** - Uses AppState
 
 ## License
 
 MIT
-
-## Links
-
-- **Main Package**: [lighty-launcher](https://crates.io/crates/lighty-launcher)
-- **Repository**: [GitHub](https://github.com/Lighty-Launcher/LightyLauncherLib)
-- **Documentation**: [docs.rs/lighty-core](https://docs.rs/lighty-core)

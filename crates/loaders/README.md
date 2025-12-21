@@ -14,10 +14,19 @@ Provides a unified trait-based API for managing different Minecraft mod loaders 
 ```rust
 use lighty_launcher::prelude::*;
 
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize AppState
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
     let launcher_dir = AppState::get_project_dirs();
 
     // Create instance with Fabric loader

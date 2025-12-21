@@ -4,6 +4,9 @@ Multi-provider authentication system for Minecraft launchers with OAuth2 and CMS
 
 ## Overview
 
+**Version**: 0.8.6
+**Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
+
 `lighty-auth` provides a unified trait-based authentication system supporting multiple providers:
 - **Offline Mode** - Local authentication without network, generates deterministic UUIDs
 - **Microsoft Account** - OAuth 2.0 Device Code Flow via Microsoft/Xbox Live/Minecraft Services
@@ -23,12 +26,19 @@ lighty-auth = "0.8.6"
 use lighty_auth::{offline::OfflineAuth, Authenticator};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let mut auth = OfflineAuth::new("PlayerName");
-    let profile = auth.authenticate().await.unwrap();
+
+    #[cfg(feature = "events")]
+    let profile = auth.authenticate(None).await?;
+
+    #[cfg(not(feature = "events"))]
+    let profile = auth.authenticate().await?;
 
     println!("Username: {}", profile.username);
     println!("UUID: {}", profile.uuid);
+
+    Ok(())
 }
 ```
 
@@ -38,7 +48,7 @@ async fn main() {
 use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let mut auth = MicrosoftAuth::new("your-azure-client-id");
 
     // Display device code to user
@@ -47,38 +57,15 @@ async fn main() {
         println!("And enter code: {}", code);
     });
 
-    let profile = auth.authenticate().await.unwrap();
+    #[cfg(feature = "events")]
+    let profile = auth.authenticate(None).await?;
+
+    #[cfg(not(feature = "events"))]
+    let profile = auth.authenticate().await?;
+
     println!("Logged in as: {}", profile.username);
-}
-```
 
-### Azuriom Authentication
-
-```rust
-use lighty_auth::{azuriom::AzuriomAuth, Authenticator, AuthError};
-
-#[tokio::main]
-async fn main() {
-    let mut auth = AzuriomAuth::new(
-        "https://your-server.com",
-        "user@example.com",
-        "password123"
-    );
-
-    match auth.authenticate().await {
-        Ok(profile) => {
-            println!("Logged in as: {}", profile.username);
-            if let Some(role) = profile.role {
-                println!("Role: {}", role.name);
-            }
-        }
-        Err(AuthError::TwoFactorRequired) => {
-            auth.set_two_factor_code("123456");
-            let profile = auth.authenticate().await.unwrap();
-            println!("Logged in with 2FA: {}", profile.username);
-        }
-        Err(e) => eprintln!("Authentication failed: {}", e),
-    }
+    Ok(())
 }
 ```
 
@@ -90,24 +77,36 @@ async fn main() {
 | **Microsoft** | ✅ Stable | Required | Legitimate Minecraft accounts |
 | **Azuriom** | ✅ Stable | Required | Custom server authentication, launcher whitelisting |
 
+## Features
+
+- **Trait-based** - Implement `Authenticator` for custom providers
+- **Event integration** - Track authentication progress with events
+- **2FA support** - Azuriom two-factor authentication
+- **Offline UUIDs** - Deterministic UUID generation
+- **Role system** - User roles with colors and permissions
+
 ## Documentation
 
 📚 **[Complete Documentation](./docs)**
 
 | Guide | Description |
 |-------|-------------|
-| [Overview](./docs/overview.md) | Authentication system design and patterns |
-| [Offline Authentication](./docs/offline.md) | Offline mode implementation and UUID generation |
-| [Microsoft OAuth2](./docs/microsoft.md) | Complete Microsoft authentication flow guide |
-| [Azuriom Integration](./docs/azuriom.md) | Azuriom CMS authentication with 2FA |
-| [Examples](./docs/examples.md) | Complete usage examples and patterns |
+| [How to Use](./docs/how-to-use.md) | Practical authentication guide with examples |
+| [Overview](./docs/overview.md) | Architecture and design patterns |
+| [Exports](./docs/exports.md) | Complete export reference |
+| [Events](./docs/events.md) | AuthEvent types |
+| [Offline](./docs/offline.md) | Offline mode and UUID generation |
+| [Microsoft](./docs/microsoft.md) | Microsoft OAuth2 flow |
+| [Azuriom](./docs/azuriom.md) | Azuriom CMS authentication |
+| [Trait](./docs/trait.md) | Implementing custom Authenticator |
+
+## Related Crates
+
+- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-event](../event/README.md)** - Event system (for AuthEvent)
+- **[lighty-core](../core/README.md)** - Hash utilities for offline UUID
+- **[lighty-launch](../launch/README.md)** - Uses UserProfile for launching
 
 ## License
 
 MIT
-
-## Links
-
-- **Main Package**: [lighty-launcher](https://crates.io/crates/lighty-launcher)
-- **Repository**: [GitHub](https://github.com/Lighty-Launcher/LightyLauncherLib)
-- **Documentation**: [docs.rs/lighty-auth](https://docs.rs/lighty-auth)

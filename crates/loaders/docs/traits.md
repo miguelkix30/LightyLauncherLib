@@ -185,7 +185,15 @@ fn print_version_info<V: VersionInfo>(version: &V) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+let _app = AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+)?;
     let launcher_dir = AppState::get_project_dirs();
 
     let instance = VersionBuilder::new("test", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
@@ -343,7 +351,15 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new("com".into(), "MyLauncher".into(), "".into())?;
+    const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+let _app = AppState::new(
+    QUALIFIER.to_string(),
+    ORGANIZATION.to_string(),
+    APPLICATION.to_string(),
+)?;
     let launcher_dir = AppState::get_project_dirs();
 
     let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
