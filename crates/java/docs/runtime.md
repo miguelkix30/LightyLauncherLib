@@ -45,7 +45,7 @@ let args = vec![
     "-Xmx2G",
     "-Xms512M",
     "-jar",
-    "server.jar"
+    "minecraft.jar"
 ];
 
 let mut runtime = JavaRuntime::new(&java_path);
@@ -64,9 +64,8 @@ runtime
     .add_arg("-Xms1G");     // Initial heap: 1GB
 ```
 
-### Recommended Settings by Use Case
+### Recommended Settings
 
-**Client (Desktop)**:
 ```rust
 runtime
     .add_arg("-Xmx4G")
@@ -77,19 +76,6 @@ runtime
     .add_arg("-XX:G1ReservePercent=20")
     .add_arg("-XX:MaxGCPauseMillis=50")
     .add_arg("-XX:G1HeapRegionSize=32M");
-```
-
-**Server (Headless)**:
-```rust
-runtime
-    .add_arg("-Xmx8G")
-    .add_arg("-Xms8G")
-    .add_arg("-XX:+UseG1GC")
-    .add_arg("-XX:+ParallelRefProcEnabled")
-    .add_arg("-XX:MaxGCPauseMillis=200")
-    .add_arg("-XX:+UnlockExperimentalVMOptions")
-    .add_arg("-XX:+DisableExplicitGC")
-    .add_arg("-XX:G1HeapRegionSize=16M");
 ```
 
 ## Output Streaming
@@ -213,29 +199,6 @@ runtime
 runtime.run(
     |line| println!("[GAME] {}", line),
     |line| eprintln!("[ERROR] {}", line),
-).await?;
-```
-
-### Running Minecraft Server
-
-```rust
-let mut runtime = JavaRuntime::new(&java_path);
-
-runtime
-    .add_arg("-Xmx8G")
-    .add_arg("-Xms8G")
-    .add_arg("-jar")
-    .add_arg("server.jar")
-    .add_arg("nogui");
-
-runtime.run(
-    |line| {
-        println!("{}", line);
-        if line.contains("Done") {
-            println!("Server started successfully!");
-        }
-    },
-    |line| eprintln!("{}", line),
 ).await?;
 ```
 

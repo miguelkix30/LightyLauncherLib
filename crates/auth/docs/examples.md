@@ -584,56 +584,9 @@ async fn main()  {
 }
 ```
 
-## Testing Examples
+## See Also
 
-### Unit Tests
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lighty_auth::{offline::OfflineAuth, Authenticator};
-
-    #[tokio::test]
-    async fn test_offline_auth() {
-        let mut auth = OfflineAuth::new("TestPlayer");
-        let profile = auth.authenticate().await.unwrap();
-
-        assert_eq!(profile.username, "TestPlayer");
-        assert!(!profile.uuid.is_empty());
-        assert!(profile.access_token.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_invalid_username() {
-        let mut auth = OfflineAuth::new("AB");  // Too short
-        let result = auth.authenticate().await;
-
-        assert!(result.is_err());
-    }
-}
-```
-
-### Integration Tests
-
-```rust
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-    use lighty_auth::{azuriom::AzuriomAuth, Authenticator};
-
-    #[tokio::test]
-    #[ignore]  // Requires live server
-    async fn test_azuriom_integration() {
-        let url = std::env::var("AZURIOM_URL").unwrap();
-        let email = std::env::var("AZURIOM_EMAIL").unwrap();
-        let password = std::env::var("AZURIOM_PASSWORD").unwrap();
-
-        let mut auth = AzuriomAuth::new(url, email, password);
-        let profile = auth.authenticate().await.unwrap();
-
-        assert!(!profile.username.is_empty());
-        assert!(profile.access_token.is_some());
-    }
-}
-```
+- [Overview](./overview.md) - Architecture overview
+- [Offline Mode](./offline.md) - Offline authentication
+- [Microsoft OAuth](./microsoft.md) - Microsoft authentication
+- [Azuriom CMS](./azuriom.md) - Azuriom authentication

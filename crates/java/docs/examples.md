@@ -285,52 +285,6 @@ async fn main() {
 }
 ```
 
-## Server Launcher
-
-```rust
-use lighty_java::{JavaDistribution, jre_downloader, runtime};
-use std::path::Path;
-
-#[tokio::main]
-async fn main() {
-    let runtime_dir = Path::new("./runtimes");
-
-    // Download Java 21 for modern server
-    let java_path = jre_downloader::jre_download(
-        runtime_dir,
-        &JavaDistribution::Temurin,
-        &21,
-        |current, total| {
-            print!("\rDownloading: {}%", (current * 100) / total);
-        }
-    ).await.unwrap();
-
-    println!("\nStarting server...");
-
-    let mut runtime = runtime::JavaRuntime::new(&java_path);
-
-    runtime
-        .add_arg("-Xmx8G")
-        .add_arg("-Xms8G")
-        .add_arg("-XX:+UseG1GC")
-        .add_arg("-XX:+ParallelRefProcEnabled")
-        .add_arg("-XX:MaxGCPauseMillis=200")
-        .add_arg("-jar")
-        .add_arg("server.jar")
-        .add_arg("nogui");
-
-    runtime.run(
-        |line| {
-            println!("{}", line);
-            if line.contains("Done") {
-                println!("Server started successfully!");
-            }
-        },
-        |line| eprintln!("ERROR: {}", line),
-    ).await.unwrap();
-}
-```
-
 ## Version-Specific Logic
 
 ```rust
@@ -363,71 +317,6 @@ async fn main() {
     println!("Ready to launch Minecraft {}", minecraft_version);
     println!("Using {} Java {}", distribution.get_name(), java_version);
     println!("Java path: {}", java_path.display());
-}
-```
-
-## Testing
-
-### Unit Tests
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lighty_java::runtime;
-
-    #[test]
-    fn test_version_detection() {
-        assert_eq!(runtime::get_jre_version("1.20.4"), 17);
-        assert_eq!(runtime::get_jre_version("1.16.5"), 8);
-        assert_eq!(runtime::get_jre_version("1.18.2"), 17);
-    }
-
-    #[tokio::test]
-    async fn test_java_exists() {
-        let path = jre_downloader::find_java_binary(
-            std::path::Path::new("./runtimes"),
-            &JavaDistribution::Temurin,
-            &21
-        ).await;
-
-        if path.is_ok() {
-            println!("Java 21 is installed");
-        }
-    }
-}
-```
-
-### Integration Tests
-
-```rust
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore]  // Requires network
-    async fn test_download_and_run() {
-        let runtime_dir = std::path::Path::new("./test_runtimes");
-
-        // Download
-        let java_path = jre_downloader::jre_download(
-            runtime_dir,
-            &JavaDistribution::Temurin,
-            &21,
-            |_, _| {}
-        ).await.unwrap();
-
-        // Run
-        let mut runtime = runtime::JavaRuntime::new(&java_path);
-        runtime.add_arg("-version");
-
-        let result = runtime.run(|_| {}, |_| {}).await;
-        assert!(result.is_ok());
-
-        // Cleanup
-        tokio::fs::remove_dir_all(runtime_dir).await.ok();
-    }
 }
 ```
 
