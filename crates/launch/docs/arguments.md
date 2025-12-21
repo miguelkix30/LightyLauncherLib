@@ -319,6 +319,44 @@ use lighty_launch::arguments::{
 };
 ```
 
+### Constant to Placeholder Mapping
+
+| Constant | Placeholder | Value |
+|----------|-------------|-------|
+| `KEY_AUTH_PLAYER_NAME` | `${auth_player_name}` | `"auth_player_name"` |
+| `KEY_AUTH_UUID` | `${auth_uuid}` | `"auth_uuid"` |
+| `KEY_AUTH_ACCESS_TOKEN` | `${auth_access_token}` | `"auth_access_token"` |
+| `KEY_AUTH_XUID` | `${auth_xuid}` | `"auth_xuid"` |
+| `KEY_CLIENT_ID` | `${clientid}` | `"clientid"` |
+| `KEY_USER_TYPE` | `${user_type}` | `"user_type"` |
+| `KEY_USER_PROPERTIES` | `${user_properties}` | `"user_properties"` |
+| `KEY_VERSION_NAME` | `${version_name}` | `"version_name"` |
+| `KEY_VERSION_TYPE` | `${version_type}` | `"version_type"` |
+| `KEY_GAME_DIRECTORY` | `${game_directory}` | `"game_directory"` |
+| `KEY_ASSETS_ROOT` | `${assets_root}` | `"assets_root"` |
+| `KEY_NATIVES_DIRECTORY` | `${natives_directory}` | `"natives_directory"` |
+| `KEY_LIBRARY_DIRECTORY` | `${library_directory}` | `"library_directory"` |
+| `KEY_ASSETS_INDEX_NAME` | `${assets_index_name}` | `"assets_index_name"` |
+| `KEY_LAUNCHER_NAME` | `${launcher_name}` | `"launcher_name"` |
+| `KEY_LAUNCHER_VERSION` | `${launcher_version}` | `"launcher_version"` |
+| `KEY_CLASSPATH` | `${classpath}` | `"classpath"` |
+| `KEY_CLASSPATH_SEPARATOR` | `${classpath_separator}` | `"classpath_separator"` |
+
+**Usage example**:
+
+```rust
+use lighty_launch::arguments::{KEY_LAUNCHER_NAME, KEY_WIDTH, KEY_HEIGHT};
+
+instance.launch(&profile, JavaDistribution::Temurin)
+    .with_arguments()
+        .set(KEY_LAUNCHER_NAME, "MyCustomLauncher")  // Override ${launcher_name}
+        .set("width", "1920")                        // Adds --width 1920
+        .set("height", "1080")                       // Adds --height 1080
+        .done()
+    .run()
+    .await?;
+```
+
 ## Complete Example
 
 ```rust
