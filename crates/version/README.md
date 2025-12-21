@@ -87,6 +87,17 @@ let version = Version::new(/* ... */);
 let metadata: &VersionMetaData = version.get_metadata();
 ```
 
+## Documentation
+
+📚 **[Complete Documentation](./docs)**
+
+| Guide | Description |
+|-------|-------------|
+| [Overview](./docs/overview.md) | Architecture and design philosophy |
+| [Version Metadata](./docs/metadata.md) | Metadata structures |
+| [Builder Pattern](./docs/builder.md) | Using the builder API |
+| [Examples](./docs/examples.md) | Complete usage examples |
+
 ## License
 
 MIT

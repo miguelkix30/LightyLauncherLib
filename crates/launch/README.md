@@ -232,6 +232,18 @@ match version.launch(username, uuid, java_dist).await {
 }
 ```
 
+## Documentation
+
+📚 **[Complete Documentation](./docs)**
+
+| Guide | Description |
+|-------|-------------|
+| [Overview](./docs/overview.md) | Architecture and design philosophy |
+| [Launch Process](./docs/launch.md) | Game launch workflow |
+| [Arguments](./docs/arguments.md) | JVM and game arguments |
+| [Instances](./docs/instances.md) | Instance management |
+| [Examples](./docs/examples.md) | Complete usage examples |
+
 ## License
 
 MIT

@@ -1,10 +1,15 @@
 # lighty-loaders
 
-Minecraft mod loader support for [LightyLauncher](https://crates.io/crates/lighty-launcher).
+Minecraft mod loader support with unified metadata API for Vanilla, Fabric, Quilt, Forge, NeoForge, and custom loaders.
 
-## Note
+## Overview
 
-This is an internal crate for the LightyLauncher ecosystem. Most users should use the main [`lighty-launcher`](https://crates.io/crates/lighty-launcher) crate instead.
+`lighty-loaders` provides a trait-based system for managing different Minecraft mod loaders:
+- **Multiple Loaders** - Vanilla, Fabric, Quilt, Forge, NeoForge, OptiFine, LightyUpdater
+- **Smart Caching** - Dual cache system with configurable TTL
+- **Version Management** - Query and resolve loader versions
+- **Metadata Merging** - Combine multiple loader metadata
+- **Feature Flags** - Compile only the loaders you need
 
 ## Features
 
@@ -220,6 +225,17 @@ println!("Total GB: {:.2}", size.total_gb());      // 0.44
 ```
 
 See the [`lighty-launch`](../launch/README.md) crate for instance management features.
+
+## Documentation
+
+📚 **[Complete Documentation](./docs)**
+
+| Guide | Description |
+|-------|-------------|
+| [Overview](./docs/overview.md) | Architecture and design philosophy |
+| [Loaders Guide](./docs/loaders.md) | Detailed guide for each loader |
+| [Caching System](./docs/caching.md) | Cache architecture and configuration |
+| [Examples](./docs/examples.md) | Complete usage examples |
 
 ## License
 
