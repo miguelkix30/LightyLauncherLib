@@ -1,91 +1,124 @@
 # lighty-version
 
-Version metadata types for [LightyLauncher](https://crates.io/crates/lighty-launcher).
+Version management and builders for [LightyLauncher](https://crates.io/crates/lighty-launcher).
 
-## Note
+## Overview
 
-This is an internal crate for the LightyLauncher ecosystem. Most users should use the main [`lighty-launcher`](https://crates.io/crates/lighty-launcher) crate instead.
+**Version**: 0.8.6
+**Part of**: [LightyLauncher](https://crates.io/crates/lighty-launcher)
+
+`lighty-version` provides version builders that implement the `VersionInfo` trait from `lighty-loaders`, enabling version management for Minecraft instances.
 
 ## Features
 
-- **Version Metadata**: Comprehensive metadata structures for Minecraft versions
-- **Builder Pattern**: Construct version configurations easily
-- **Type Safety**: Strongly typed version information
-- **Serialization**: Full serde support for JSON import/export
+- **VersionBuilder** - Standard version builder for all loaders
+- **LightyVersionBuilder** - Custom server version builder for LightyUpdater
+- **VersionInfo Implementation** - Implements core version trait
+- **Directory Management** - Configurable game and Java directories
+- **Type Safety** - Strongly typed version information
 
-## Structure
-
-```
-lighty-version/
-└── src/
-    ├── lib.rs                  # Module declarations and re-exports
-    ├── version_builder.rs      # Version builder pattern
-    ├── lighty_builder.rs       # LightyUpdater builder
-    └── loader_extensions_impl.rs # Loader-specific extensions
-```
-
-## Usage
+## Quick Start
 
 ```toml
 [dependencies]
-lighty-version = "0.6.3"
+lighty-version = "0.8.6"
 ```
+
+### VersionBuilder (Standard Loaders)
 
 ```rust
-use lighty_version::version_metadata::{VersionMetaData, VersionBuilder};
+use lighty_core::AppState;
+use lighty_version::VersionBuilder;
+use lighty_loaders::types::Loader;
 
-// Use version metadata
-let metadata = VersionMetaData {
-    id: "1.21".to_string(),
-    main_class: "net.minecraft.client.main.Main".to_string(),
-    // ... other fields
-};
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
 
-// Or use the builder
-let builder = VersionBuilder::new()
-    .id("1.21")
-    .main_class("net.minecraft.client.main.Main")
-    .build();
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
+
+    // Create instance with Fabric loader
+    let instance = VersionBuilder::new(
+        "my-instance",         // Instance name
+        Loader::Fabric,        // Loader type
+        "0.16.9",             // Loader version
+        "1.21.1",             // Minecraft version
+        launcher_dir
+    );
+
+    println!("Instance: {}", instance.name());
+    println!("Game dir: {}", instance.game_dirs().display());
+
+    Ok(())
+}
 ```
 
-## Types
-
-### VersionMetaData
-
-Complete metadata for a Minecraft version including:
-- Version ID
-- Main class
-- Libraries
-- Assets
-- Arguments
-- Download URLs
-
-### VersionBuilder
-
-Builder for constructing version metadata:
+### LightyVersionBuilder (Custom Server)
 
 ```rust
-use lighty_version::version_metadata::VersionBuilder;
+use lighty_core::AppState;
+use lighty_version::LightyVersionBuilder;
 
-let builder = VersionBuilder::new()
-    .id("1.21")
-    .main_class("net.minecraft.client.main.Main")
-    .asset_index("16")
-    .build();
+const QUALIFIER: &str = "com";
+const ORGANIZATION: &str = "MyLauncher";
+const APPLICATION: &str = "";
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let _app = AppState::new(
+        QUALIFIER.to_string(),
+        ORGANIZATION.to_string(),
+        APPLICATION.to_string(),
+    )?;
+
+    let launcher_dir = AppState::get_project_dirs();
+
+    // Create instance for custom server with LightyUpdater
+    let instance = LightyVersionBuilder::new(
+        "my-modpack",                  // Instance name
+        "https://myserver.com/api",    // Server API URL
+        launcher_dir
+    );
+
+    println!("Server: {}", instance.loader_version());
+
+    Ok(())
+}
 ```
 
-## Integration
-
-This crate is typically used with `lighty-loaders` to provide version information:
+### With Custom Directories
 
 ```rust
-use lighty_loaders::version::Version;
-use lighty_version::version_metadata::VersionMetaData;
+use std::path::PathBuf;
 
-// Version objects contain VersionMetaData internally
-let version = Version::new(/* ... */);
-let metadata: &VersionMetaData = version.get_metadata();
+// Custom game and Java directories
+let instance = VersionBuilder::new(
+    "custom",
+    Loader::Vanilla,
+    "",
+    "1.21.1",
+    launcher_dir
+)
+.with_custom_game_dir(PathBuf::from("/opt/minecraft/instances/custom"))
+.with_custom_java_dir(PathBuf::from("/usr/lib/jvm/java-21"));
 ```
+
+## Core Types
+
+| Type | Description |
+|------|-------------|
+| **VersionBuilder** | Standard version builder for all loaders |
+| **LightyVersionBuilder** | Custom server builder for LightyUpdater |
+
+Both implement `VersionInfo` from `lighty-loaders`.
 
 ## Documentation
 
@@ -93,17 +126,19 @@ let metadata: &VersionMetaData = version.get_metadata();
 
 | Guide | Description |
 |-------|-------------|
-| [Overview](./docs/overview.md) | Architecture and design philosophy |
-| [Version Metadata](./docs/metadata.md) | Metadata structures |
-| [Builder Pattern](./docs/builder.md) | Using the builder API |
-| [Examples](./docs/examples.md) | Complete usage examples |
+| [How to Use](./docs/how-to-use.md) | Practical usage guide with examples |
+| [Overview](./docs/overview.md) | Architecture and design |
+| [Exports](./docs/exports.md) | Complete export reference |
+| [VersionBuilder](./docs/version-builder.md) | Standard version builder details |
+| [LightyVersionBuilder](./docs/lighty-version-builder.md) | Custom server builder details |
+
+## Related Crates
+
+- **[lighty-launcher](../../../README.md)** - Main package
+- **[lighty-loaders](../loaders/README.md)** - VersionInfo trait and loaders
+- **[lighty-core](../core/README.md)** - AppState for project directories
+- **[lighty-launch](../launch/README.md)** - Uses VersionBuilder for launching
 
 ## License
 
 MIT
-
-## Links
-
-- **Main Package**: [lighty-launcher](https://crates.io/crates/lighty-launcher)
-- **Repository**: [GitHub](https://github.com/Lighty-Launcher/LightyLauncherLib)
-- **Documentation**: [docs.rs/lighty-version](https://docs.rs/lighty-version)
