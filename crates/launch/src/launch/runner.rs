@@ -103,7 +103,20 @@ where
         ).await?);
 
         // 4. Lancer le jeu
-        execute_game(version, version_data, username, uuid, java_path, arg_overrides, arg_removals, jvm_overrides, jvm_removals, raw_args).await
+        execute_game(
+            version,
+            version_data,
+            username,
+            uuid,
+            java_path,
+            arg_overrides,
+            arg_removals,
+            jvm_overrides,
+            jvm_removals,
+            raw_args,
+            #[cfg(feature = "events")]
+            event_bus,
+        ).await
 }
 
 /// Récupère les métadonnées complètes du loader
@@ -221,6 +234,7 @@ async fn execute_game<T>(
     jvm_overrides: &HashMap<String, String>,
     jvm_removals: &HashSet<String>,
     raw_args: &[String],
+    #[cfg(feature = "events")] event_bus: Option<&EventBus>,
 ) -> InstallerResult<()>
 where
     T: VersionInfo + Arguments,
@@ -255,10 +269,10 @@ where
 
             // Émettre événement InstanceLaunched
             #[cfg(feature = "events")]
-            {
-                use lighty_event::{Event, InstanceLaunchedEvent, EVENT_BUS};
+            if let Some(bus) = event_bus {
+                use lighty_event::{Event, InstanceLaunchedEvent};
 
-                EVENT_BUS.emit(Event::InstanceLaunched(InstanceLaunchedEvent {
+                bus.emit(Event::InstanceLaunched(InstanceLaunchedEvent {
                     pid,
                     instance_name: builder.name().to_string(),
                     version: format!("{}-{}", builder.minecraft_version(), builder.loader_version()),
