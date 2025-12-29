@@ -43,13 +43,25 @@ impl JavaRuntime {
 
         lighty_core::trace_debug!("Spawning Java process: {:?}", &self.0);
 
-        // Build and spawn command
-        let child = Command::new(&self.0)
+        // Build command
+        let mut command = Command::new(&self.0);
+        command
             .current_dir(game_dir)
             .args(arguments)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+
+        // On Windows, hide the console window
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        // Spawn the process
+        let child = command.spawn()?;
 
         lighty_core::trace_info!("Java process spawned successfully");
         Ok(child)
