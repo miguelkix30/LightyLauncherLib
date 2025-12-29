@@ -41,6 +41,10 @@ impl TauriEvent {
                 event_type: "instance_launched".to_string(),
                 data: serde_json::to_value(instance_event).unwrap_or(serde_json::Value::Null),
             },
+            Event::InstanceWindowAppeared(instance_event) => Self {
+                event_type: "instance_window_appeared".to_string(),
+                data: serde_json::to_value(instance_event).unwrap_or(serde_json::Value::Null),
+            },
             Event::InstanceExited(instance_event) => Self {
                 event_type: "instance_exited".to_string(),
                 data: serde_json::to_value(instance_event).unwrap_or(serde_json::Value::Null),

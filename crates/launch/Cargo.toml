@@ -57,6 +57,10 @@ once_cell.workspace = true
 fastrand.workspace = true
 rayon.workspace = true
 
+# Windows API (conditional)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
 [features]
 default = []
 events = ["lighty-event", "lighty-java/events", "lighty-core/events"]

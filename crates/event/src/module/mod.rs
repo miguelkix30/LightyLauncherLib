@@ -17,5 +17,5 @@ pub use launch::LaunchEvent;
 pub use loader::LoaderEvent;
 pub use console::{
     ConsoleOutputEvent, ConsoleStream, InstanceDeletedEvent, InstanceExitedEvent,
-    InstanceLaunchedEvent,
+    InstanceLaunchedEvent, InstanceWindowAppearedEvent,
 };

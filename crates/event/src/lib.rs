@@ -56,7 +56,8 @@ pub use errors::{
 };
 pub use module::{
     AuthEvent, ConsoleOutputEvent, ConsoleStream, CoreEvent, InstanceDeletedEvent,
-    InstanceExitedEvent, InstanceLaunchedEvent, JavaEvent, LaunchEvent, LoaderEvent,
+    InstanceExitedEvent, InstanceLaunchedEvent, InstanceWindowAppearedEvent, JavaEvent,
+    LaunchEvent, LoaderEvent,
 };
 
 /// Event bus for broadcasting events to multiple listeners
@@ -139,6 +140,7 @@ pub enum Event {
     Loader(LoaderEvent),
     Core(CoreEvent),
     InstanceLaunched(InstanceLaunchedEvent),
+    InstanceWindowAppeared(InstanceWindowAppearedEvent),
     InstanceExited(InstanceExitedEvent),
     ConsoleOutput(ConsoleOutputEvent),
     InstanceDeleted(InstanceDeletedEvent),

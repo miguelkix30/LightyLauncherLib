@@ -17,6 +17,20 @@ pub struct InstanceLaunchedEvent {
     pub timestamp: SystemTime,
 }
 
+/// Event emitted when a game instance window appears
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstanceWindowAppearedEvent {
+    /// Process ID of the instance
+    pub pid: u32,
+    /// Name of the instance
+    pub instance_name: String,
+    /// Version string (e.g., "1.20.1-fabric-0.15.0")
+    pub version: String,
+    /// Timestamp when the window appeared
+    #[serde(with = "system_time_serializer")]
+    pub timestamp: SystemTime,
+}
+
 /// Event emitted when a game instance exits
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceExitedEvent {

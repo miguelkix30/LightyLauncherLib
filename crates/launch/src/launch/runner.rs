@@ -10,10 +10,8 @@ use lighty_auth::UserProfile;
 use std::sync::Arc;
 use std::path::PathBuf;
 use lighty_loaders::types::version_metadata::VersionMetaData;
-use tokio::sync::oneshot;
 use lighty_java::jre_downloader::find_java_binary;
 use lighty_java::runtime::JavaRuntime;
-use lighty_java::JreError;
 use crate::arguments::Arguments;
 use std::collections::{HashMap,HashSet};
 
@@ -279,6 +277,12 @@ where
                     username: username.to_string(),
                     timestamp: std::time::SystemTime::now(),
                 }));
+
+                // Spawner le détecteur de fenêtre
+                let bus_clone = bus.clone();
+                let instance_name = builder.name().to_string();
+                let version = format!("{}-{}", builder.minecraft_version(), builder.loader_version());
+                tokio::spawn(detect_window_appearance(pid, instance_name, version, bus_clone));
             }
 
             // Spawner le console streaming handler
@@ -304,4 +308,104 @@ fn extract_version(metadata: &VersionMetaData) -> InstallerResult<&Version> {
         VersionMetaData::Version(v) => Ok(v),
         _ => Err(InstallerError::InvalidMetadata),
     }
+}
+
+/// Détecte l'apparition de la fenêtre du jeu et émet un événement
+#[cfg(feature = "events")]
+async fn detect_window_appearance(
+    pid: u32,
+    instance_name: String,
+    version: String,
+    event_bus: lighty_event::EventBus,
+) {
+    #[cfg(windows)]
+    {
+        use std::time::Duration;
+
+        // Vérifier toutes les 100ms pendant 30 secondes maximum
+        let max_attempts = 300;
+        let check_interval = Duration::from_millis(100);
+
+        for _ in 0..max_attempts {
+            if has_visible_window(pid) {
+                lighty_core::trace_info!("[Launch] Window appeared for PID: {}", pid);
+
+                event_bus.emit(lighty_event::Event::InstanceWindowAppeared(
+                    lighty_event::InstanceWindowAppearedEvent {
+                        pid,
+                        instance_name,
+                        version,
+                        timestamp: std::time::SystemTime::now(),
+                    }
+                ));
+                return;
+            }
+
+            tokio::time::sleep(check_interval).await;
+        }
+
+        lighty_core::trace_warn!("[Launch] Window detection timed out for PID: {}", pid);
+    }
+
+    #[cfg(not(windows))]
+    {
+        // Sur les autres plateformes, attendre un délai fixe (approximation)
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        lighty_core::trace_info!("[Launch] Assuming window appeared for PID: {} (non-Windows platform)", pid);
+
+        event_bus.emit(lighty_event::Event::InstanceWindowAppeared(
+            lighty_event::InstanceWindowAppearedEvent {
+                pid,
+                instance_name,
+                version,
+                timestamp: std::time::SystemTime::now(),
+            }
+        ));
+    }
+}
+
+/// Vérifie si un processus a une fenêtre visible (Windows uniquement)
+#[cfg(all(windows, feature = "events"))]
+fn has_visible_window(pid: u32) -> bool {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
+    };
+
+    struct EnumData {
+        target_pid: u32,
+        found: bool,
+    }
+
+    unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let data = &mut *(lparam.0 as *mut EnumData);
+
+        // Vérifier si la fenêtre est visible
+        if IsWindowVisible(hwnd).as_bool() {
+            let mut window_pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
+
+            if window_pid == data.target_pid {
+                data.found = true;
+                return BOOL(0); // Arrêter l'énumération
+            }
+        }
+
+        BOOL(1) // Continuer l'énumération
+    }
+
+    let mut data = EnumData {
+        target_pid: pid,
+        found: false,
+    };
+
+    unsafe {
+        let _ = EnumWindows(
+            Some(enum_window_callback),
+            LPARAM(&mut data as *mut _ as isize),
+        );
+    }
+
+    data.found
 }
