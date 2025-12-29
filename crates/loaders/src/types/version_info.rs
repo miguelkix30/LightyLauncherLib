@@ -74,4 +74,20 @@ pub trait VersionInfo: Clone + Send + Sync {
     fn paths(&self) -> (&Path, &Path) {
         (self.game_dirs(), self.java_dirs())
     }
+
+    /// Vérifie si l'instance de jeu est installée
+    ///
+    /// Une instance est considérée comme installée si son répertoire de jeu existe
+    /// et contient les dossiers essentiels (libraries, versions)
+    fn is_installed(&self) -> bool {
+        let game_dir = self.game_dirs();
+        if !game_dir.exists() {
+            return false;
+        }
+
+        let libraries_dir = game_dir.join("libraries");
+        let versions_dir = game_dir.join("versions");
+
+        libraries_dir.exists() && versions_dir.exists()
+    }
 }
