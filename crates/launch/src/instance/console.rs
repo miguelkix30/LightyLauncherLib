@@ -1,6 +1,9 @@
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 
+#[cfg(feature = "events")]
+use lighty_event::EventBus;
+
 /// Handle console streams (stdout/stderr) from a running game instance
 ///
 /// This function spawns asynchronous tasks to:
@@ -8,13 +11,21 @@ use tokio::process::Child;
 /// - Read and emit stderr lines
 /// - Wait for the process to exit and emit exit event
 /// - Unregister the instance when done
-pub(crate) async fn handle_console_streams(pid: u32, instance_name: String, mut child: Child) {
+pub(crate) async fn handle_console_streams(
+    pid: u32,
+    instance_name: String,
+    mut child: Child,
+    #[cfg(feature = "events")] event_bus: Option<EventBus>,
+) {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
     // Handler stdout
     if let Some(stdout) = stdout {
         let instance_name = instance_name.clone();
+        #[cfg(feature = "events")]
+        let event_bus_clone = event_bus.clone();
+
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
@@ -22,16 +33,18 @@ pub(crate) async fn handle_console_streams(pid: u32, instance_name: String, mut 
             while let Ok(Some(line)) = lines.next_line().await {
                 #[cfg(feature = "events")]
                 {
-                    use lighty_event::{ConsoleOutputEvent, ConsoleStream, Event, EVENT_BUS};
+                    use lighty_event::{ConsoleOutputEvent, ConsoleStream, Event};
                     use std::time::SystemTime;
 
-                    EVENT_BUS.emit(Event::ConsoleOutput(ConsoleOutputEvent {
-                        pid,
-                        instance_name: instance_name.clone(),
-                        stream: ConsoleStream::Stdout,
-                        line,
-                        timestamp: SystemTime::now(),
-                    }));
+                    if let Some(ref bus) = event_bus_clone {
+                        bus.emit(Event::ConsoleOutput(ConsoleOutputEvent {
+                            pid,
+                            instance_name: instance_name.clone(),
+                            stream: ConsoleStream::Stdout,
+                            line,
+                            timestamp: SystemTime::now(),
+                        }));
+                    }
                 }
             }
         });
@@ -40,6 +53,9 @@ pub(crate) async fn handle_console_streams(pid: u32, instance_name: String, mut 
     // Handler stderr
     if let Some(stderr) = stderr {
         let instance_name = instance_name.clone();
+        #[cfg(feature = "events")]
+        let event_bus_clone = event_bus.clone();
+
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
@@ -47,16 +63,18 @@ pub(crate) async fn handle_console_streams(pid: u32, instance_name: String, mut 
             while let Ok(Some(line)) = lines.next_line().await {
                 #[cfg(feature = "events")]
                 {
-                    use lighty_event::{ConsoleOutputEvent, ConsoleStream, Event, EVENT_BUS};
+                    use lighty_event::{ConsoleOutputEvent, ConsoleStream, Event};
                     use std::time::SystemTime;
 
-                    EVENT_BUS.emit(Event::ConsoleOutput(ConsoleOutputEvent {
-                        pid,
-                        instance_name: instance_name.clone(),
-                        stream: ConsoleStream::Stderr,
-                        line,
-                        timestamp: SystemTime::now(),
-                    }));
+                    if let Some(ref bus) = event_bus_clone {
+                        bus.emit(Event::ConsoleOutput(ConsoleOutputEvent {
+                            pid,
+                            instance_name: instance_name.clone(),
+                            stream: ConsoleStream::Stderr,
+                            line,
+                            timestamp: SystemTime::now(),
+                        }));
+                    }
                 }
             }
         });
@@ -67,15 +85,17 @@ pub(crate) async fn handle_console_streams(pid: u32, instance_name: String, mut 
         Ok(status) => {
             #[cfg(feature = "events")]
             {
-                use lighty_event::{Event, InstanceExitedEvent, EVENT_BUS};
+                use lighty_event::{Event, InstanceExitedEvent};
                 use std::time::SystemTime;
 
-                EVENT_BUS.emit(Event::InstanceExited(InstanceExitedEvent {
-                    pid,
-                    instance_name: instance_name.clone(),
-                    exit_code: status.code(),
-                    timestamp: SystemTime::now(),
-                }));
+                if let Some(ref bus) = event_bus {
+                    bus.emit(Event::InstanceExited(InstanceExitedEvent {
+                        pid,
+                        instance_name: instance_name.clone(),
+                        exit_code: status.code(),
+                        timestamp: SystemTime::now(),
+                    }));
+                }
             }
 
             lighty_core::trace_info!(

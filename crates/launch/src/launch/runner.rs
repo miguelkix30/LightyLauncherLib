@@ -291,6 +291,8 @@ where
                 pid,
                 builder.name().to_string(),
                 child,
+                #[cfg(feature = "events")]
+                event_bus.cloned(),
             ));
 
             Ok(())
