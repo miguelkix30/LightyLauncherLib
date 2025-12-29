@@ -7,10 +7,13 @@ use lighty_event::EventBus;
 /// Handle console streams (stdout/stderr) from a running game instance
 ///
 /// This function spawns asynchronous tasks to:
-/// - Read and emit stdout lines
+/// - Read and emit stdout lines (Minecraft includes its own timestamps in the log text)
 /// - Read and emit stderr lines
 /// - Wait for the process to exit and emit exit event
 /// - Unregister the instance when done
+///
+/// Note: Frontend should not display the event timestamp for stdout as Minecraft
+/// already includes timestamps in its log format
 pub(crate) async fn handle_console_streams(
     pid: u32,
     instance_name: String,
