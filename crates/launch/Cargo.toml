@@ -61,6 +61,10 @@ rayon.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
+# Unix API (conditional)
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30.1", features = ["signal", "process"] }
+
 [features]
 default = []
 events = ["lighty-event", "lighty-java/events", "lighty-core/events"]
