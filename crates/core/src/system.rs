@@ -149,10 +149,11 @@ impl Architecture {
 
     pub fn get_zulu_arch(&self) -> SystemResult<&'static str> {
         match self {
+            //TODO: rework this part for java 8 for macos
             Architecture::X86 => Ok("i686"),
             Architecture::X64 => Ok("x64"),
             Architecture::ARM => Ok("arm"),
-            Architecture::AARCH64 => Ok("aarch64"),
+            Architecture::AARCH64 => Ok("arm"),
             Architecture::UNKNOWN => Err(SystemError::UnsupportedArchitecture),
         }
     }

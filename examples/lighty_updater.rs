@@ -1,4 +1,5 @@
 use lighty_launcher::prelude::*;
+use lighty_java::JreError;
 
 const QUALIFIER: &str = "fr";
 const ORGANIZATION: &str = ".LightyLauncher";
@@ -27,10 +28,10 @@ async fn main() -> anyhow::Result<()> {
     let profile = auth.authenticate().await?;
 
     // Configure LightyUpdater server URL
-    let url = "http://localhost:8080";
+    let url = "http://dev.polargames";
 
     // Build LightyUpdater instance
-    let mut version = LightyVersionBuilder::new("minozia", url, launcher_dir);
+    let mut version = LightyVersionBuilder::new("wynlers-dev", url, launcher_dir);
 
     // Fetch metadata to verify connection
     let _metadata = version.get_metadata().await?;

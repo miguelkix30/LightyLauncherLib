@@ -1,3 +1,4 @@
+use lighty_java::JreError;
 use lighty_core::time_it;
 use lighty_java::jre_downloader::jre_download;
 use lighty_java::JavaDistribution;
