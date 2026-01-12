@@ -153,7 +153,7 @@ impl Architecture {
             Architecture::X86 => Ok("i686"),
             Architecture::X64 => Ok("x64"),
             Architecture::ARM => Ok("arm"),
-            Architecture::AARCH64 => Ok("arm"),
+            Architecture::AARCH64 => Ok("aarch64"),
             Architecture::UNKNOWN => Err(SystemError::UnsupportedArchitecture),
         }
     }

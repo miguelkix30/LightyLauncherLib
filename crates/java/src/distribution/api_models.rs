@@ -9,10 +9,11 @@
 use serde::Deserialize;
 
 /// Zulu API response structure
-/// Only deserializes the download_url field, ignoring all other fields
+/// Only deserializes the download_url and name fields, ignoring all other fields
 #[derive(Debug, Deserialize)]
 pub(super) struct ZuluPackage {
     pub download_url: String,
+    pub name: String,
     // All other fields are ignored automatically by serde
 }
 

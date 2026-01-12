@@ -43,10 +43,10 @@ pub async fn build_zulu_url(version: &u8) -> DistributionResult<String> {
             error: e.to_string(),
         })?;
 
-    // Take the first (latest) package without cloning
+    // Find the first package without JavaFX (-fx-)
     packages
         .into_iter()
-        .next()
+        .find(|pkg| !pkg.name.contains("-fx-"))
         .map(|pkg| pkg.download_url)
         .ok_or(DistributionError::NoPackagesFound {
             distribution: "Zulu",
