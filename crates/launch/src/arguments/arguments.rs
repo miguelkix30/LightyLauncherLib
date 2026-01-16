@@ -79,6 +79,12 @@ impl<T: VersionInfo> Arguments for T {
 
         // S'assurer que les arguments JVM critiques sont toujours présents
 
+        // 0. macOS: -XstartOnFirstThread est OBLIGATOIRE pour LWJGL/OpenGL
+        #[cfg(target_os = "macos")]
+        if !jvm_args.iter().any(|arg| arg == "-XstartOnFirstThread") {
+            jvm_args.insert(0, "-XstartOnFirstThread".to_string());
+        }
+
         // 1. java.library.path (pour les natives LWJGL)
         if !jvm_args.iter().any(|arg| arg.starts_with("-Djava.library.path=")) {
             let natives_dir = variables.get(KEY_NATIVES_DIRECTORY).cloned().unwrap_or_default();

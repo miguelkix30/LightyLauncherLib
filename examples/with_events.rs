@@ -165,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create instance
     trace_info!("Step 2: Creating Vanilla instance...");
-    let mut instance = VersionBuilder::new("demo-instance", Loader::Vanilla, "", "1.21.1", launcher_dir);
+    let mut instance = VersionBuilder::new("demo-instance2", Loader::Vanilla, "", "1.16", launcher_dir);
     trace_info!("Instance created\n");
 
     // Calculate instance size
@@ -187,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Launch with event bus
     trace_info!("Step 4: Launching instance...");
-    instance.launch(&profile, JavaDistribution::Liberica)
+    instance.launch(&profile, JavaDistribution::Temurin)
         .with_event_bus(&event_bus)
         .with_jvm_options()
             .set("Xmx", "2G")

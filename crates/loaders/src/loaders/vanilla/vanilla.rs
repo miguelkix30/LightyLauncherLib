@@ -139,31 +139,41 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
             message: format!("Unable to determine architecture bits (32 or 64). Detected architecture: {:?}", std::env::consts::ARCH)
         })?;
 
+    // macOS naming changed in Minecraft 1.19+: "osx" -> "macos" for LWJGL 3.3+
+    // We need to check both patterns for compatibility
+    let os_names: Vec<&str> = if os_name == "osx" {
+        vec!["osx", "macos"]  // Check both for macOS
+    } else {
+        vec![os_name]
+    };
+
     let natives = full_data.libraries
         .iter()
         .filter_map(|lib| {
-            // Cas 1: Nouveau format
+            // Cas 1: Nouveau format (natives-{os}{arch})
             if lib.name.contains(":natives-") {
-                let exact_pattern = format!(":natives-{}{}", os_name, arch_suffix);
+                for os in &os_names {
+                    let exact_pattern = format!(":natives-{}{}", os, arch_suffix);
 
-                if lib.name.ends_with(&exact_pattern) {
-                    if let Some(rules) = &lib.rules {
-                        if !should_apply_rules(rules, os_name) {
-                            return None;
+                    if lib.name.ends_with(&exact_pattern) {
+                        if let Some(rules) = &lib.rules {
+                            if !should_apply_rules(rules, os_name) {
+                                return None;
+                            }
                         }
-                    }
 
-                    return lib.downloads.artifact.as_ref().map(|a| Native {
-                        name: lib.name.clone(),
-                        url: Some(a.url.clone()),
-                        path: Some(a.path.clone()),
-                        sha1: Some(a.sha1.clone()),
-                        size: Some(a.size),
-                    });
+                        return lib.downloads.artifact.as_ref().map(|a| Native {
+                            name: lib.name.clone(),
+                            url: Some(a.url.clone()),
+                            path: Some(a.path.clone()),
+                            sha1: Some(a.sha1.clone()),
+                            size: Some(a.size),
+                        });
+                    }
                 }
             }
 
-            // Cas 2: Ancien format
+            // Cas 2: Ancien format (classifiers)
             if let Some(natives_map) = &lib.natives {
                 if let Some(classifiers) = &lib.downloads.classifiers {
                     if let Some(rules) = &lib.rules {
@@ -172,17 +182,20 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
                         }
                     }
 
-                    if let Some(classifier_pattern) = natives_map.get(os_name) {
-                        let classifier_name = classifier_pattern.replace("${arch}", arch_bits);
+                    // Try all OS name variants
+                    for os in &os_names {
+                        if let Some(classifier_pattern) = natives_map.get(*os) {
+                            let classifier_name = classifier_pattern.replace("${arch}", arch_bits);
 
-                        if let Some(artifact) = classifiers.get(&classifier_name) {
-                            return Some(Native {
-                                name: lib.name.clone(),
-                                url: Some(artifact.url.clone()),
-                                path: Some(artifact.path.clone()),
-                                sha1: Some(artifact.sha1.clone()),
-                                size: Some(artifact.size),
-                            });
+                            if let Some(artifact) = classifiers.get(&classifier_name) {
+                                return Some(Native {
+                                    name: lib.name.clone(),
+                                    url: Some(artifact.url.clone()),
+                                    path: Some(artifact.path.clone()),
+                                    sha1: Some(artifact.sha1.clone()),
+                                    size: Some(artifact.size),
+                                });
+                            }
                         }
                     }
                 }

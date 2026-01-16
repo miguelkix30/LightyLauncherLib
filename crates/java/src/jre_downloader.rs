@@ -278,9 +278,10 @@ async fn extract_archive(archive_bytes: &[u8], destination: &Path) -> JreResult<
 
 /// Locates the java binary within the extracted JRE directory
 ///
-/// The structure varies by OS:
+/// The structure varies by OS and distribution:
 /// - Windows: jre_root/bin/java.exe
-/// - macOS: jre_root/Contents/Home/bin/java
+/// - macOS (bundle): jre_root/Contents/Home/bin/java (Temurin, Zulu)
+/// - macOS (flat): jre_root/bin/java (Liberica tar.gz)
 /// - Linux: jre_root/bin/java
 async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
     // Find the first subdirectory (JRE root)
@@ -297,7 +298,16 @@ async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
     // Build path to java binary based on OS
     let java_binary = match OS {
         OperatingSystem::WINDOWS => jre_root.join("bin").join("java.exe"),
-        OperatingSystem::OSX => jre_root.join("Contents").join("Home").join("bin").join("java"),
+        OperatingSystem::OSX => {
+            // macOS: Try bundle structure first (Temurin, Zulu), then flat structure (Liberica)
+            let bundle_path = jre_root.join("Contents").join("Home").join("bin").join("java");
+            if bundle_path.exists() {
+                bundle_path
+            } else {
+                // Fallback to flat structure (like Linux)
+                jre_root.join("bin").join("java")
+            }
+        }
         _ => jre_root.join("bin").join("java"),
     };
 
