@@ -165,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Create instance
     trace_info!("Step 2: Creating Vanilla instance...");
-    let mut instance = VersionBuilder::new("demo-instance2", Loader::Vanilla, "", "1.16", launcher_dir);
+    let mut instance = VersionBuilder::new("demo-instance-28", Loader::Vanilla, "", "1.16", launcher_dir);
     trace_info!("Instance created\n");
 
     // Calculate instance size
@@ -214,34 +214,25 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Let it run for a while
-    trace_info!("\nStep 6: Instance running... (waiting 30 seconds)");
+    // Let it run for a while - wait long enough to see the game window
+    trace_info!("\nStep 6: Instance running... (waiting 60 seconds)");
     trace_info!("Console output is being streamed above");
-    tokio::time::sleep(Duration::from_secs(30)).await;
-
-    // Close the instance
-    trace_info!("\nStep 7: Closing instance...");
-    if let Some(pid) = instance.get_pid() {
-        instance.close_instance(pid).await?;
-        trace_info!("Instance closed successfully");
-    }
-
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
 
     // Delete the instance
-    trace_info!("Step 8: Deleting instance...");
-    let running_pids = instance.get_pids();
-    if !running_pids.is_empty() {
-        trace_warn!("Warning: Instance still running, closing all...");
-        for pid in running_pids {
-            instance.close_instance(pid).await?;
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
+    // trace_info!("Step 8: Deleting instance...");
+    // let running_pids = instance.get_pids();
+    // if !running_pids.is_empty() {
+    //     trace_warn!("Warning: Instance still running, closing all...");
+    //     for pid in running_pids {
+    //         instance.close_instance(pid).await?;
+    //     }
+    //     tokio::time::sleep(Duration::from_secs(2)).await;
+    // }
 
-    instance.delete_instance().await?;
-    trace_info!("Instance deleted from disk");
-    trace_info!("Example completed successfully");
+    // instance.delete_instance().await?;
+    // trace_info!("Instance deleted from disk");
+    trace_info!("Example completed successfully (instance kept for debugging)");
 
     Ok(())
 }

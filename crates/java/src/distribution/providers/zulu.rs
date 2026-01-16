@@ -14,9 +14,19 @@ use lighty_core::hosts::HTTP_CLIENT;
 ///
 /// Queries the Azul API to get the latest JRE package for the specified version
 pub async fn build_zulu_url(version: &u8) -> DistributionResult<String> {
+    use lighty_core::system::{Architecture, OperatingSystem};
+
     let os_name = OS.get_zulu_name()?;
-    let arch_name = ARCHITECTURE.get_zulu_arch()?;
     let ext = OS.get_zulu_ext()?;
+
+    // For Java 8 on macOS ARM64: use x64 architecture
+    // Old Minecraft versions (pre-1.19) only have x86_64 natives, so we need x64 Java
+    // to run everything under Rosetta 2
+    let arch_name = if *version == 8 && OS == OperatingSystem::OSX && ARCHITECTURE == Architecture::AARCH64 {
+        "x64"  // Use x64 Java which runs under Rosetta 2
+    } else {
+        ARCHITECTURE.get_zulu_arch()?
+    };
 
     // Build API URL to get latest JRE package
     let api_url = format!(

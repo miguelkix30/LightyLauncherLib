@@ -147,28 +147,38 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
         vec![os_name]
     };
 
+    // Architecture suffixes to try: native arch first, then x64 fallback for ARM64 (Rosetta 2)
+    // Older Minecraft versions (pre-1.19) don't have ARM64 natives
+    let arch_suffixes: Vec<&str> = if arch_suffix == "-arm64" && os_name == "osx" {
+        vec!["-arm64", ""]  // Try ARM64 first, fall back to x64 (runs via Rosetta 2)
+    } else {
+        vec![arch_suffix]
+    };
+
     let natives = full_data.libraries
         .iter()
         .filter_map(|lib| {
             // Cas 1: Nouveau format (natives-{os}{arch})
             if lib.name.contains(":natives-") {
                 for os in &os_names {
-                    let exact_pattern = format!(":natives-{}{}", os, arch_suffix);
+                    for arch in &arch_suffixes {
+                        let exact_pattern = format!(":natives-{}{}", os, arch);
 
-                    if lib.name.ends_with(&exact_pattern) {
-                        if let Some(rules) = &lib.rules {
-                            if !should_apply_rules(rules, os_name) {
-                                return None;
+                        if lib.name.ends_with(&exact_pattern) {
+                            if let Some(rules) = &lib.rules {
+                                if !should_apply_rules(rules, os_name) {
+                                    return None;
+                                }
                             }
-                        }
 
-                        return lib.downloads.artifact.as_ref().map(|a| Native {
-                            name: lib.name.clone(),
-                            url: Some(a.url.clone()),
-                            path: Some(a.path.clone()),
-                            sha1: Some(a.sha1.clone()),
-                            size: Some(a.size),
-                        });
+                            return lib.downloads.artifact.as_ref().map(|a| Native {
+                                name: lib.name.clone(),
+                                url: Some(a.url.clone()),
+                                path: Some(a.path.clone()),
+                                sha1: Some(a.sha1.clone()),
+                                size: Some(a.size),
+                            });
+                        }
                     }
                 }
             }

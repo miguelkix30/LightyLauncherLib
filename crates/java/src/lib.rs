@@ -86,14 +86,40 @@ impl JavaDistribution {
         }
     }
 
-    /// Checks if this distribution supports the given Java version
+    /// Checks if this distribution supports the given Java version on the current platform
+    ///
+    /// Some combinations are not available:
+    /// - Temurin: No Java 8 for macOS ARM64 (Apple Silicon released after Java 8 EOL)
+    /// - GraalVM: Only Java 17+
     pub fn supports_version(&self, version: u8) -> bool {
+        use lighty_core::system::{Architecture, OperatingSystem, ARCHITECTURE, OS};
+
         match self {
-            JavaDistribution::Temurin => true, // Supports all versions (8, 11, 17, 21, etc.)
-            JavaDistribution::GraalVM => version >= 17, // Only 17+ (JDK only, no JRE)
-            JavaDistribution::Zulu => true, // Supports all versions
-            JavaDistribution::Liberica => true, // Supports all versions
+            JavaDistribution::Temurin => {
+                // No Java 8 for macOS ARM64
+                !(version == 8 && OS == OperatingSystem::OSX && ARCHITECTURE == Architecture::AARCH64)
+            }
+            JavaDistribution::GraalVM => version >= 17,
+            JavaDistribution::Zulu | JavaDistribution::Liberica => true,
         }
+    }
+
+    /// Returns a fallback distribution if this one doesn't support the version/platform
+    ///
+    /// Returns `None` if no fallback is needed (current distribution is supported)
+    pub fn get_fallback(&self, version: u8) -> Option<JavaDistribution> {
+        if self.supports_version(version) {
+            return None;
+        }
+
+        // Find a compatible distribution
+        let candidates = [
+            JavaDistribution::Zulu,      // Best fallback: supports all versions on all platforms
+            JavaDistribution::Liberica,  // Second choice
+            JavaDistribution::Temurin,   // Third choice
+        ];
+
+        candidates.into_iter().find(|d| d.supports_version(version))
     }
 
     /// Gets download URL for the distribution
@@ -102,5 +128,4 @@ impl JavaDistribution {
     pub async fn get_download_url(&self, jre_version: &u8) -> DistributionResult<String> {
         distribution::get_download_url(self, jre_version).await
     }
-
 }
