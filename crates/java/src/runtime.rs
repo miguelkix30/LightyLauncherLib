@@ -42,6 +42,17 @@ impl JavaRuntime {
         }
 
         lighty_core::trace_debug!("Spawning Java process: {:?}", &self.0);
+        lighty_core::trace_debug!("Working directory: {:?}", game_dir);
+        lighty_core::trace_debug!("Total arguments: {}", arguments.len());
+        
+        // Log all arguments for debugging
+        for (i, arg) in arguments.iter().enumerate() {
+            if arg.len() > 200 {
+                lighty_core::trace_debug!("  [{}]: {}... ({} chars)", i, &arg[..200], arg.len());
+            } else {
+                lighty_core::trace_debug!("  [{}]: {}", i, arg);
+            }
+        }
 
         // Build command
         let mut command = Command::new(&self.0);

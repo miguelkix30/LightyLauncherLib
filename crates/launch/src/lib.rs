@@ -10,4 +10,4 @@ pub mod instance;
 // Re-export commonly used items
 pub use launch::{LaunchBuilder, LaunchConfig};
 pub use installer::Installer;
-pub use instance::{InstanceControl, InstanceError, InstanceResult};
+pub use instance::{InstanceControl, InstanceError, InstanceResult, read_latest_log, read_all_logs, extract_errors_from_log};

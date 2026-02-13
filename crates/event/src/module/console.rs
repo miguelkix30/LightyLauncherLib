@@ -43,6 +43,10 @@ pub struct InstanceExitedEvent {
     /// Timestamp when the instance exited
     #[serde(with = "system_time_serializer")]
     pub timestamp: SystemTime,
+    /// Last N lines from logs/latest.log (if available and exit code != 0)
+    pub log_excerpt: Option<Vec<String>>,
+    /// Extracted error lines from the log (if available)
+    pub error_lines: Option<Vec<String>>,
 }
 
 /// Event emitted for each line of console output
