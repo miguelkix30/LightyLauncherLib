@@ -27,7 +27,7 @@ impl<F: Query> ManifestRepository<F> {
         query: F::Query,
     ) -> Result<Arc<F::Data>> {
         let key = QueryKey {
-            version: version.name().to_string(),
+            version: version.full_identifier(),
             query: query.clone(),
         };
 
@@ -56,7 +56,7 @@ impl<F: Query> ManifestRepository<F> {
     }
     async fn get_cached_version_data<V: VersionInfo>(&self, version: &V) -> Result<Arc<<F as Query>::Raw>> {
         let ttl = F::cache_ttl();
-        let key = version.name().to_string();
+        let key = version.full_identifier();
 
         let data = self
             .raw_version_cache
