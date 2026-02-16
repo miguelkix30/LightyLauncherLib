@@ -81,17 +81,21 @@ impl ProcessorContext {
         }
     }
 
-    /// Substitue les patterns dans une chaîne de caractères
-    /// 
-    /// Gère les variables {VAR}, les coordonnées Maven [group:artifact:version:classifier@extension] et les chemins d'installer /path
-    pub fn substitute(&self, input: &str) -> Result<String> {
+    /// Substitue uniquement les variables {VAR} sans résoudre les coordonnées Maven
+    pub fn substitute_variables(&self, input: &str) -> String {
         let mut result = input.to_string();
-
-        // Substituer les variables {VAR}
         for (key, value) in &self.data {
             let pattern = format!("{{{}}}", key);
             result = result.replace(&pattern, value);
         }
+        result
+    }
+
+    /// Substitue les patterns dans une chaîne de caractères
+    ///
+    /// Gère les variables {VAR}, les coordonnées Maven [group:artifact:version:classifier@extension] et les chemins d'installer /path
+    pub fn substitute(&self, input: &str) -> Result<String> {
+        let result = self.substitute_variables(input);
 
         // Gérer les coordonnées Maven [group:artifact:version:classifier@extension]
         if result.starts_with('[') && result.ends_with(']') {
@@ -286,10 +290,33 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
     // 2. Substituer les arguments du processor
     let mut processed_args = Vec::new();
     for arg in &processor.args {
-        let substituted = context.substitute(arg)?;
+        // D'abord substituer uniquement les variables {VAR}
+        let substituted = context.substitute_variables(arg);
 
-        // Si l'argument substitué commence par '/', c'est un chemin d'installer à extraire
-        if substituted.starts_with('/') {
+        if substituted.starts_with('[') && substituted.ends_with(']') {
+            // Coordonnée Maven : résoudre le chemin et télécharger si le fichier n'existe pas
+            let maven_coords = &substituted[1..substituted.len() - 1];
+            let resolved_path = context.resolve_maven_path(maven_coords)?;
+            let path = PathBuf::from(&resolved_path);
+            if !path.exists() {
+                // Tenter le téléchargement — si 404, c'est un output de processeur qui sera généré
+                match download_processor_jar(context, maven_coords).await {
+                    Ok(_) => {}
+                    Err(_) => {
+                        if let Some(parent) = path.parent() {
+                            mkdir!(parent);
+                        }
+                        lighty_core::trace_debug!(
+                            loader = "neoforge",
+                            artifact = %maven_coords,
+                            "Artifact not available on Maven, assuming processor output"
+                        );
+                    }
+                }
+            }
+            processed_args.push(resolved_path);
+        } else if substituted.starts_with('/') {
+            // Chemin d'installer : extraire depuis le JAR
             let internal_path = &substituted[1..];
             let target_path = extract_and_resolve(context, internal_path).await?;
             processed_args.push(target_path);
