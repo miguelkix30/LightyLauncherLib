@@ -244,7 +244,11 @@ name = "quilt"
 required-features = ["quilt", "tracing"]
 
 [[example]]
-name = "neoforge"
+name = "neoforge_before_1-20"
+required-features = ["neoforge", "tracing"]
+
+[[example]]
+name = "neoforge_after_1-21"
 required-features = ["neoforge", "tracing"]
 
 [[example]]

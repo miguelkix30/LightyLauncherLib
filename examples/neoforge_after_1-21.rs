@@ -28,9 +28,16 @@ async fn main() -> anyhow::Result<()> {
     let profile = auth.authenticate().await?;
 
     // Build and launch NeoForge instance
-    let mut neoforge = VersionBuilder::new("neoforge", Loader::NeoForge, "20.2.93", "1.20.2", launcher_dir);
+    let mut neoforge = VersionBuilder::new(
+        "neoforge_after_1-21",
+        Loader::NeoForge,
+        "21.1.219",
+        "1.21.1",
+        launcher_dir,
+    );
 
-    neoforge.launch(&profile, JavaDistribution::Temurin)
+    neoforge
+        .launch(&profile, JavaDistribution::Temurin)
         .run()
         .await?;
 
