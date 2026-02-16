@@ -1,18 +1,18 @@
-use zip::ZipArchive;
 use async_trait::async_trait;
-use std::{fs::File, io::Read, path::PathBuf, collections::HashMap};
 use once_cell::sync::Lazy;
+use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
+use zip::ZipArchive;
 
 use super::neoforge_metadata::{NeoForgeMetaData, NeoForgeVersionMeta};
-use crate::neoforge::patcher;
-use crate::types::version_metadata::{Library, MainClass, Arguments, Version, VersionMetaData};
-use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
+use super::patcher;
+use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
+use crate::utils::{error::QueryError, manifest::ManifestRepository, query::Query};
 
 use crate::loaders::vanilla::vanilla::VanillaQuery;
 
-use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use lighty_core::download::download_file_untracked;
+use lighty_core::hosts::HTTP_CLIENT;
 
 use lighty_core::mkdir;
 pub type Result<T> = std::result::Result<T, QueryError>;
@@ -104,27 +104,34 @@ impl Query for NeoForgeQuery {
         Ok(result)
     }
 
-    async fn version_builder<V: VersionInfo>(version: &V, full_data: &NeoForgeMetaData) -> Result<Version> {
+    async fn version_builder<V: VersionInfo>(version: &V, _full_data: &NeoForgeMetaData) -> Result<Version> {
         // Paralléliser la récupération des données Vanilla et la lecture du version.json
         let (vanilla_builder, version_meta) = tokio::try_join!(
-        async {
-            let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
-            VanillaQuery::version_builder(version, &vanilla_data).await
-        },
-        async {
-            let profiles_dir = version.game_dirs().join(".neoforge");
-            let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version()));
-            let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
-            Ok::<_, QueryError>(version_meta)
-        }
-    )?;
+            async {
+                let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+                VanillaQuery::version_builder(version, &vanilla_data).await
+            },
+            async {
+                let profiles_dir = version.game_dirs().join(".neoforge");
+                let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version()));
+                let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
+                Ok::<_, QueryError>(version_meta)
+            }
+        )?;
+
+        // Extraire UNIQUEMENT les bibliothèques du version.json (runtime)
+        // Les bibliothèques de l'install_profile.json sont uniquement pour les processors
+        let version_json_libs = extract_libraries_from_version_meta(&version_meta);
+
+        // Fusionner : Vanilla + version.json (priorité au version.json)
+        let merged_libs = merge_libraries(vanilla_builder.libraries, version_json_libs);
 
         // Merger directement avec Vanilla en priorité
         Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(&version_meta)),
             java_version: vanilla_builder.java_version,
             arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(&version_meta)),
-            libraries: merge_libraries(vanilla_builder.libraries, extract_libraries(full_data)),
+            libraries: merged_libs,
             mods: None,
             natives: vanilla_builder.natives,
             client: vanilla_builder.client,
@@ -207,6 +214,20 @@ fn extract_arguments(version_meta: &NeoForgeVersionMeta) -> Arguments {
 
 fn extract_libraries(full_data: &NeoForgeMetaData) -> Vec<Library> {
     full_data
+        .libraries
+        .iter()
+        .map(|lib| Library {
+            name: lib.name.clone(),
+            url: Some(lib.downloads.artifact.url.clone()),
+            path: Some(lib.downloads.artifact.path.clone()),
+            sha1: Some(lib.downloads.artifact.sha1.clone()),
+            size: Some(lib.downloads.artifact.size),
+        })
+        .collect()
+}
+
+fn extract_libraries_from_version_meta(version_meta: &NeoForgeVersionMeta) -> Vec<Library> {
+    version_meta
         .libraries
         .iter()
         .map(|lib| Library {
@@ -309,7 +330,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
 async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     let sha1_url = format!("{}.sha1", jar_url);
 
-    match CLIENT.get(&sha1_url).send().await {
+    match HTTP_CLIENT.get(&sha1_url).send().await {
         Ok(response) if response.status().is_success() => {
             response.text().await.ok().and_then(|text| {
                 let sha1 = text.trim().split_whitespace().next()?.to_string();
