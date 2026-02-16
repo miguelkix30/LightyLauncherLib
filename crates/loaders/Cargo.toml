@@ -45,8 +45,6 @@ directories.workspace = true
 # Utilities
 once_cell.workspace = true
 version-compare.workspace = true
-sha1.workspace = true
-hex.workspace = true
 
 [features]
 vanilla = []

@@ -1,6 +1,5 @@
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use std::path::PathBuf;
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
@@ -18,7 +17,6 @@ use lighty_event::EventBus;
 pub(crate) async fn handle_console_streams(
     pid: u32,
     instance_name: String,
-    game_dir: PathBuf,
     mut child: Child,
     #[cfg(feature = "events")] event_bus: Option<EventBus>,
 ) {
@@ -94,32 +92,11 @@ pub(crate) async fn handle_console_streams(
                 use std::time::SystemTime;
 
                 if let Some(ref bus) = event_bus {
-                    let exit_code = status.code();
-                    let mut log_excerpt = None;
-                    let mut error_lines = None;
-
-                    // If exit code is non-zero, try to read logs
-                    if exit_code != Some(0) {
-                        if let Ok(logs) = super::logs::read_latest_log(&game_dir, 50) {
-                            if !logs.is_empty() {
-                                let log_text = logs.join("\n");
-                                let errors = super::logs::extract_errors_from_log(&log_text);
-                                
-                                log_excerpt = Some(logs);
-                                if !errors.is_empty() {
-                                    error_lines = Some(errors);
-                                }
-                            }
-                        }
-                    }
-
                     bus.emit(Event::InstanceExited(InstanceExitedEvent {
                         pid,
                         instance_name: instance_name.clone(),
-                        exit_code,
+                        exit_code: status.code(),
                         timestamp: SystemTime::now(),
-                        log_excerpt,
-                        error_lines,
                     }));
                 }
             }

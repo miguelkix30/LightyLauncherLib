@@ -291,7 +291,6 @@ where
             tokio::spawn(handle_console_streams(
                 pid,
                 builder.name().to_string(),
-                builder.game_dirs().to_path_buf(),
                 child,
                 #[cfg(feature = "events")]
                 event_bus.cloned(),

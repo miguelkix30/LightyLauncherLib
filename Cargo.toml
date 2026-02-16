@@ -252,10 +252,6 @@ name = "forge"
 required-features = ["forge", "tracing"]
 
 [[example]]
-name = "forge_debug"
-required-features = ["forge", "events", "tracing"]
-
-[[example]]
 name = "forge_legacy"
 required-features = ["forge_legacy", "tracing"]
 

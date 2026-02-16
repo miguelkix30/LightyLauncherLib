@@ -5,7 +5,6 @@ use crate::loaders::lighty_updater::lighty_updater::{LIGHTY_UPDATER, LightyQuery
 use crate::loaders::neoforge::neoforge::{NeoForgeQuery, NEOFORGE};
 use crate::loaders::quilt::quilt::{QuiltQuery, QUILT};
 use crate::loaders::fabric::fabric::{FabricQuery, FABRIC};
-use crate::loaders::forge::forge::{ForgeQuery, FORGE};
 use crate::loaders::vanilla::vanilla::{VanillaQuery, VANILLA};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -88,7 +87,10 @@ where
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                FORGE.get(self, ForgeQuery::ForgeBuilder).await
+                // TODO: Implement Forge support
+                Err(QueryError::UnsupportedLoader(
+                    "Forge loader is not yet implemented".to_string()
+                ))
             }
 
             #[cfg(feature = "lighty_updater")]
@@ -131,7 +133,10 @@ where
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                FORGE.get(self, ForgeQuery::Libraries).await
+                // TODO: Implement Forge support
+                Err(QueryError::UnsupportedLoader(
+                    "Forge loader is not yet implemented".to_string()
+                ))
             }
 
             _ => {
