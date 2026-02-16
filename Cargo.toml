@@ -237,7 +237,7 @@ required-features = ["vanilla", "tracing"]
 
 [[example]]
 name = "fabric"
-required-features = ["fabric", "tracing"]
+required-features = ["fabric","events", "tracing"]
 
 [[example]]
 name = "quilt"

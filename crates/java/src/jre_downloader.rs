@@ -24,7 +24,8 @@ use lighty_event::{EventBus, Event, JavaEvent};
 /// Locates an existing Java binary in the runtime directory
 ///
 /// Searches for the java executable in the expected directory structure
-/// based on the distribution and version.
+/// based on the distribution and version. Automatically uses fallback
+/// distribution for unsupported version/platform combinations.
 ///
 /// # Arguments
 /// * `runtimes_folder` - Base directory containing installed JREs
@@ -38,7 +39,12 @@ pub async fn find_java_binary(
     distribution: &JavaDistribution,
     version: &u8,
 ) -> JreResult<PathBuf> {
-    let runtime_dir = build_runtime_path(runtimes_folder, distribution, version);
+    // Check if we need a fallback distribution
+    let effective_distribution = distribution
+        .get_fallback(*version)
+        .unwrap_or_else(|| distribution.clone());
+
+    let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
 
     let binary_path = locate_binary_in_directory(&runtime_dir).await?;
 
@@ -71,13 +77,18 @@ pub async fn jre_download<F>(
 where
     F: Fn(u64, u64),
 {
-    let runtime_dir = build_runtime_path(runtimes_folder, distribution, version);
+    // Check if we need a fallback distribution
+    let effective_distribution = distribution
+        .get_fallback(*version)
+        .unwrap_or_else(|| distribution.clone());
+
+    let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
 
     // Clean existing installation
     prepare_installation_directory(&runtime_dir).await?;
 
     // Get download URL
-    let download_url = distribution
+    let download_url = effective_distribution
         .get_download_url(version)
         .await
         .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
@@ -94,7 +105,7 @@ where
         let total_bytes = response.content_length().unwrap_or(0);
 
         bus.emit(Event::Java(JavaEvent::JavaDownloadStarted {
-            distribution: distribution.get_name().to_string(),
+            distribution: effective_distribution.get_name().to_string(),
             version: *version,
             total_bytes,
         }));
@@ -121,7 +132,7 @@ where
     // Emit JavaDownloadCompleted event
     if let Some(bus) = event_bus {
         bus.emit(Event::Java(JavaEvent::JavaDownloadCompleted {
-            distribution: distribution.get_name().to_string(),
+            distribution: effective_distribution.get_name().to_string(),
             version: *version,
         }));
     }
@@ -129,7 +140,7 @@ where
     // Emit JavaExtractionStarted event
     if let Some(bus) = event_bus {
         bus.emit(Event::Java(JavaEvent::JavaExtractionStarted {
-            distribution: distribution.get_name().to_string(),
+            distribution: effective_distribution.get_name().to_string(),
             version: *version,
         }));
     }
@@ -142,12 +153,12 @@ where
     ).await?;
 
     // Locate and return the java binary
-    let binary_path = find_java_binary(runtimes_folder, distribution, version).await?;
+    let binary_path = find_java_binary(runtimes_folder, &effective_distribution, version).await?;
 
     // Emit JavaExtractionCompleted event
     if let Some(bus) = event_bus {
         bus.emit(Event::Java(JavaEvent::JavaExtractionCompleted {
-            distribution: distribution.get_name().to_string(),
+            distribution: effective_distribution.get_name().to_string(),
             version: *version,
             binary_path: binary_path.to_string_lossy().to_string(),
         }));
@@ -176,13 +187,18 @@ pub async fn jre_download<F>(
 where
     F: Fn(u64, u64),
 {
-    let runtime_dir = build_runtime_path(runtimes_folder, distribution, version);
+    // Check if we need a fallback distribution
+    let effective_distribution = distribution
+        .get_fallback(*version)
+        .unwrap_or_else(|| distribution.clone());
+
+    let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
 
     // Clean existing installation
     prepare_installation_directory(&runtime_dir).await?;
 
     // Get download URL
-    let download_url = distribution
+    let download_url = effective_distribution
         .get_download_url(version)
         .await
         .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
@@ -196,7 +212,7 @@ where
     extract_archive(&archive_bytes, &runtime_dir).await?;
 
     // Locate and return the java binary
-    find_java_binary(runtimes_folder, distribution, version).await
+    find_java_binary(runtimes_folder, &effective_distribution, version).await
 }
 
 // ============================================================================
@@ -278,9 +294,11 @@ async fn extract_archive(archive_bytes: &[u8], destination: &Path) -> JreResult<
 
 /// Locates the java binary within the extracted JRE directory
 ///
-/// The structure varies by OS:
+/// The structure varies by OS and distribution:
 /// - Windows: jre_root/bin/java.exe
-/// - macOS: jre_root/Contents/Home/bin/java
+/// - macOS (bundle): jre_root/Contents/Home/bin/java (Temurin)
+/// - macOS (nested bundle): jre_root/*.jre/Contents/Home/bin/java (Zulu Java 8)
+/// - macOS (flat): jre_root/bin/java (Liberica tar.gz)
 /// - Linux: jre_root/bin/java
 async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
     // Find the first subdirectory (JRE root)
@@ -297,7 +315,23 @@ async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
     // Build path to java binary based on OS
     let java_binary = match OS {
         OperatingSystem::WINDOWS => jre_root.join("bin").join("java.exe"),
-        OperatingSystem::OSX => jre_root.join("Contents").join("Home").join("bin").join("java"),
+        OperatingSystem::OSX => {
+            // macOS: Try multiple structures in order of likelihood
+
+            // 1. Direct bundle: jre_root/Contents/Home/bin/java (Temurin, most Zulu versions)
+            let bundle_path = jre_root.join("Contents").join("Home").join("bin").join("java");
+            if bundle_path.exists() {
+                bundle_path
+            }
+            // 2. Nested .jre bundle: jre_root/*.jre/Contents/Home/bin/java (Zulu Java 8)
+            else if let Some(nested) = find_nested_jre_bundle(&jre_root).await {
+                nested
+            }
+            // 3. Flat structure: jre_root/bin/java (Liberica tar.gz)
+            else {
+                jre_root.join("bin").join("java")
+            }
+        }
         _ => jre_root.join("bin").join("java"),
     };
 
@@ -309,6 +343,31 @@ async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
     }
 
     Ok(java_binary)
+}
+
+/// Finds a nested .jre bundle inside the JRE root (Zulu Java 8 on macOS)
+#[cfg(target_os = "macos")]
+async fn find_nested_jre_bundle(jre_root: &Path) -> Option<PathBuf> {
+    let mut entries = fs::read_dir(jre_root).await.ok()?;
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = path.file_name()?.to_str()?;
+            if name.ends_with(".jre") {
+                let java_path = path.join("Contents").join("Home").join("bin").join("java");
+                if java_path.exists() {
+                    return Some(java_path);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn find_nested_jre_bundle(_jre_root: &Path) -> Option<PathBuf> {
+    None
 }
 
 /// Ensures the java binary has execution permissions on Unix systems
