@@ -39,19 +39,7 @@ impl Query for NeoForgeQuery {
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<NeoForgeMetaData> {
         // Construire l'URL de l'installer
-        let installer_url = if is_old_neoforge(version) {
-            let path_version = format!("{}-{}", version.minecraft_version(), version.loader_version());
-            let file_prefix = format!("forge-{}", version.minecraft_version());
-            format!(
-                "https://maven.neoforged.net/releases/net/neoforged/forge/{}/{}-{}-installer.jar",
-                path_version, file_prefix, version.loader_version()
-            )
-        } else {
-            format!(
-                "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
-                version.loader_version(), version.loader_version()
-            )
-        };
+        let installer_url = build_installer_url(version);
 
         lighty_core::trace_debug!(url = %installer_url, loader = "neoforge", "Installer URL constructed");
 
@@ -237,6 +225,33 @@ fn is_old_neoforge<V: VersionInfo>(version: &V) -> bool {
         .unwrap_or(false)
 }
 
+fn build_installer_url<V: VersionInfo>(version: &V) -> String {
+    if is_old_neoforge(version) {
+        let path_version = format!("{}-{}", version.minecraft_version(), version.loader_version());
+        let file_prefix = format!("forge-{}", version.minecraft_version());
+        format!(
+            "https://maven.neoforged.net/releases/net/neoforged/forge/{}/{}-{}-installer.jar",
+            path_version, file_prefix, version.loader_version()
+        )
+    } else {
+        format!(
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
+            version.loader_version(), version.loader_version()
+        )
+    }
+}
+
+fn processors_marker_path<V: VersionInfo>(version: &V) -> PathBuf {
+    version
+        .game_dirs()
+        .join(".neoforge")
+        .join(format!(
+            "processors-{}-{}.sha1",
+            version.minecraft_version(),
+            version.loader_version()
+        ))
+}
+
 /// Lit les JSONs directement depuis le JAR sans extraction sur disque
 async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaData, NeoForgeVersionMeta)> {
     let path = installer_path.clone();
@@ -340,12 +355,32 @@ pub async fn run_install_processors<V: VersionInfo>(
         });
     }
 
-    //TODO: Ajouter une vérification pour ne pas run les processors si ils ont déjà été run
+    let installer_url = build_installer_url(version);
+    let marker_path = processors_marker_path(version);
+    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
+        if let Ok(existing) = std::fs::read_to_string(&marker_path) {
+            if existing.trim() == expected_sha1 {
+                lighty_core::trace_info!(
+                    loader = "neoforge",
+                    "Processors already executed for this installer, skipping"
+                );
+                return Ok(());
+            }
+        }
+    }
 
     // Exécuter les processors
     patcher::run_processors(version, install_profile, installer_path).await?;
-
-    //TODO: Ajouter une marque pour indiquer que les processors ont été run (fichier, flag dans le manifest, etc.)
+    
+    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
+        if let Err(_err) = std::fs::write(&marker_path, expected_sha1) {
+            lighty_core::trace_warn!(
+                error = %_err,
+                loader = "neoforge",
+                "Failed to write processors marker file"
+            );
+        }
+    }
 
     lighty_core::trace_info!(loader = "neoforge", "Processors completed successfully");
     Ok(())
