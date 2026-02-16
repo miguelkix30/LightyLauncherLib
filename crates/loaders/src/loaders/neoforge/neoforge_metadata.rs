@@ -13,7 +13,7 @@ pub struct NeoForgeMetaData {
     pub welcome: String,
     #[serde(rename = "mirrorList")]
     pub mirror_list: String,
-    #[serde(rename = "hideExtract")]
+    #[serde(rename = "hideExtract", default)]
     pub hide_extract: bool,
     pub data: HashMap<String, DataEntry>,
     pub processors: Vec<Processor>,
@@ -35,6 +35,8 @@ pub struct Processor {
     pub jar: String,
     pub classpath: Vec<String>,
     pub args: Vec<String>,
+    #[serde(default)]
+    pub outputs: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -58,6 +60,7 @@ pub struct Artifact {
 
 // ============= VERSION.JSON =============
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 pub struct NeoForgeVersionMeta {
     pub id: String,
