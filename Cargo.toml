@@ -172,7 +172,8 @@ anyhow = { workspace = true }
 vanilla = ["lighty-loaders/vanilla"]
 fabric = ["lighty-loaders/fabric"]
 quilt = ["lighty-loaders/quilt"]
-neoforge = ["lighty-loaders/neoforge"]
+# Ajout de lighty-launch dans les features neoforge pour pouvoir run le patcher après l'installation dans la crate launch
+neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
 forge = ["lighty-loaders/forge"]
 forge_legacy = ["lighty-loaders/forge_legacy"]
 lighty_updater = ["lighty-loaders/lighty_updater"]

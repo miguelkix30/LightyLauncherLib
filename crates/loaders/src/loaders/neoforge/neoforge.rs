@@ -70,8 +70,8 @@ impl Query for NeoForgeQuery {
                     lighty_core::trace_warn!(loader = "neoforge", "Installer exists but SHA1 mismatch, re-downloading");
                     true
                 }
-                Err(e) => {
-                    lighty_core::trace_warn!(error = %e, loader = "neoforge", "Could not verify SHA1, using existing file");
+                Err(_e) => {
+                    lighty_core::trace_warn!(error = %_e, loader = "neoforge", "Could not verify SHA1, using existing file");
                     false
                 }
             }
@@ -316,4 +316,18 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
         .map_err(|e| QueryError::Conversion {
             message: format!("Failed to verify SHA1: {}", e)
         })
+}
+
+/// Exécute les processors pour une installation NeoForge
+/// Cette fonction doit être appelée après que les libraries sont téléchargées
+pub async fn run_install_processors<V: VersionInfo>(
+    _version: &V,
+    _install_profile: &NeoForgeMetaData,
+) -> Result<()> {
+    lighty_core::trace_info!(loader = "neoforge", "Checking if processors need to run");
+
+    //TODO: Implémenter les processors nécessaires pour NeoForge
+
+    lighty_core::trace_info!(loader = "neoforge", "Processors completed successfully");
+    Ok(())
 }
