@@ -4,6 +4,7 @@ use std::{fs::File, io::Read, path::PathBuf, collections::HashMap};
 use once_cell::sync::Lazy;
 
 use super::neoforge_metadata::{NeoForgeMetaData, NeoForgeVersionMeta};
+use crate::neoforge::patcher;
 use crate::types::version_metadata::{Library, MainClass, Arguments, Version, VersionMetaData};
 use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
 use crate::types::VersionInfo;
@@ -321,12 +322,30 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
 /// Exécute les processors pour une installation NeoForge
 /// Cette fonction doit être appelée après que les libraries sont téléchargées
 pub async fn run_install_processors<V: VersionInfo>(
-    _version: &V,
-    _install_profile: &NeoForgeMetaData,
+    version: &V,
+    install_profile: &NeoForgeMetaData,
 ) -> Result<()> {
     lighty_core::trace_info!(loader = "neoforge", "Checking if processors need to run");
 
-    //TODO: Implémenter les processors nécessaires pour NeoForge
+    let profiles_dir = version.game_dirs().join(".neoforge");
+    mkdir!(profiles_dir);
+    let installer_path = profiles_dir.join(format!(
+        "neoforge-{}-installer.jar",
+        version.loader_version(),
+    ));
+
+    if !installer_path.exists() {
+        return Err(QueryError::Conversion {
+            message: "Installer JAR not found. Run fetch_full_data first.".to_string(),
+        });
+    }
+
+    //TODO: Ajouter une vérification pour ne pas run les processors si ils ont déjà été run
+
+    // Exécuter les processors
+    patcher::run_processors(version, install_profile, installer_path).await?;
+
+    //TODO: Ajouter une marque pour indiquer que les processors ont été run (fichier, flag dans le manifest, etc.)
 
     lighty_core::trace_info!(loader = "neoforge", "Processors completed successfully");
     Ok(())
