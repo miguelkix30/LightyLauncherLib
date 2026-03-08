@@ -260,7 +260,12 @@ where
     let java_runtime = JavaRuntime::new(java_path);
     lighty_core::trace_info!("[Launch] Executing game...");
 
-    match java_runtime.execute(arguments, builder.game_dirs()).await {
+    let runtime_dir = builder.game_dirs().join("runtime");
+    if !runtime_dir.exists() {
+        let _ = std::fs::create_dir_all(&runtime_dir);
+    }
+
+    match java_runtime.execute(arguments, &runtime_dir).await {
         Ok(child) => {
             let pid = child.id().ok_or(InstallerError::NoPid)?;
 
