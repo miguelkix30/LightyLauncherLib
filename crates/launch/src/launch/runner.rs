@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use lighty_loaders::types::version_metadata::VersionMetaData;
 use lighty_java::jre_downloader::find_java_binary;
 use lighty_java::runtime::JavaRuntime;
-use crate::arguments::Arguments;
+use crate::arguments::{Arguments, KEY_GAME_DIRECTORY};
 use std::collections::{HashMap,HashSet};
 
 #[cfg(feature = "neoforge")]
@@ -254,16 +254,43 @@ where
     use crate::instance::manager::GameInstance;
 
     // Construire les arguments
-    let arguments = builder.build_arguments(version, username, uuid, arg_overrides, arg_removals, jvm_overrides, jvm_removals, raw_args);
+    let arguments = builder.build_arguments(
+        version,
+        username,
+        uuid,
+        arg_overrides,
+        arg_removals,
+        jvm_overrides,
+        jvm_removals,
+        raw_args,
+    );
+
+    // Déterminer le "game directory" effectif
+    //
+    // Par défaut, on utilise game_dirs()/"runtime". Cependant, si
+    // un override explicite pour la variable `game_directory` est
+    // présent, on l'utilise pour que le processus Java soit lancé
+    // directement dans ce répertoire (par exemple, un gamedir
+    // éphémère fourni par un launcher externe).
+    let mut runtime_dir = if let Some(dir) = arg_overrides.get(KEY_GAME_DIRECTORY) {
+        let path = PathBuf::from(dir);
+        lighty_core::trace_info!("[Launch] Using overridden game_directory as runtime_dir: {:?}", path);
+        path
+    } else {
+        let path = builder.game_dirs().join("runtime");
+        lighty_core::trace_info!("[Launch] Using default runtime_dir from game_dirs(): {:?}", path);
+        path
+    };
+
+    if !runtime_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&runtime_dir) {
+            lighty_core::trace_warn!("[Launch] Failed to create runtime_dir {:?}: {}", runtime_dir, e);
+        }
+    }
 
     // Créer JavaRuntime avec le chemin vers java.exe
     let java_runtime = JavaRuntime::new(java_path);
-    lighty_core::trace_info!("[Launch] Executing game...");
-
-    let runtime_dir = builder.game_dirs().join("runtime");
-    if !runtime_dir.exists() {
-        let _ = std::fs::create_dir_all(&runtime_dir);
-    }
+    lighty_core::trace_info!("[Launch] Executing game in runtime_dir {:?}...", runtime_dir);
 
     match java_runtime.execute(arguments, &runtime_dir).await {
         Ok(child) => {
@@ -277,6 +304,9 @@ where
                 instance_name: builder.name().to_string(),
                 version: format!("{}-{}", builder.minecraft_version(), builder.loader_version()),
                 username: username.to_string(),
+                // Conserver game_dirs() comme racine logique de l'instance
+                // (données persistantes), même si le runtime effectif peut
+                // pointer vers un répertoire éphémère.
                 game_dir: builder.game_dirs().to_path_buf(),
                 started_at: std::time::SystemTime::now(),
             };
