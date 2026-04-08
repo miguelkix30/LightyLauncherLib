@@ -194,7 +194,7 @@ impl Authenticator for AzuriomAuth {
 
             let error = match error_response.reason.as_str() {
                 "invalid_credentials" => AuthError::InvalidCredentials,
-                "requires_2fa" => AuthError::TwoFactorRequired,
+                "2fa" => AuthError::TwoFactorRequired,
                 "invalid_2fa" => AuthError::Invalid2FACode,
                 "email_not_verified" => AuthError::EmailNotVerified,
                 "banned" => AuthError::AccountBanned(String::new()),
