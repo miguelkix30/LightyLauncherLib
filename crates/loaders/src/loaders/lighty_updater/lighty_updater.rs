@@ -108,9 +108,10 @@ impl Query for LightyQuery {
             })?;
 
         lighty_core::trace_info!(
-            "[LightyUpdater] ServerInfo retrieved: name={}, loader={}, mc_version={}, last_update={}",
+            "[LightyUpdater] ServerInfo retrieved: name={}, loader={}, loader_version={}, mc_version={}, last_update={}",
             server_info.name(),
             server_info.loader(),
+            server_info.loader_version(),
             server_info.minecraft_version(),
             server_info.last_update()
         );
@@ -168,7 +169,7 @@ impl Query for LightyQuery {
         // Créer le VersionOverride avec les vraies valeurs du serveur
         let version_override = VersionOverride {
             name: version.name().to_string(),
-            loader_version: version.loader_version().to_string(),
+            loader_version: server_info.loader_version().to_string(),
             minecraft_version: server_info.minecraft_version().to_string(),
             loader,
             game_dirs: version.game_dirs().to_path_buf(),
