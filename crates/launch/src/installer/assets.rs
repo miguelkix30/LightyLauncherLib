@@ -10,6 +10,9 @@ use super::verifier::needs_download;
 use super::downloader::download_small_with_concurrency_limit;
 
 #[cfg(feature = "events")]
+use super::downloader::DownloadProgressKind;
+
+#[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 /// Collects assets that need to be downloaded
@@ -55,6 +58,8 @@ pub async fn download_assets(
             tasks,
             #[cfg(feature = "events")]
             event_bus,
+            #[cfg(feature = "events")]
+            Some(DownloadProgressKind::Assets),
         )
         .await?
     });

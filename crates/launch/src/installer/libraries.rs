@@ -10,6 +10,9 @@ use super::verifier::needs_download;
 use super::downloader::download_with_concurrency_limit;
 
 #[cfg(feature = "events")]
+use super::downloader::DownloadProgressKind;
+
+#[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 /// Collects libraries that need to be downloaded
@@ -50,6 +53,8 @@ pub async fn download_libraries(
             tasks,
             #[cfg(feature = "events")]
             event_bus,
+            #[cfg(feature = "events")]
+            Some(DownloadProgressKind::Libraries),
         )
         .await?
     });

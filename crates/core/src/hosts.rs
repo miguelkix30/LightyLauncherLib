@@ -1,7 +1,7 @@
 use std::env;
 use std::time::Duration;
 use once_cell::sync::Lazy;
-use reqwest::Client;
+use reqwest::{Client, Url};
 use tokio::fs;
 use thiserror::Error;
 
@@ -37,6 +37,95 @@ pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
         .build()
         .expect("Failed to build HTTP client with default configuration - this should never fail")
 });
+
+fn env_base(var: &str) -> Option<String> {
+    env::var(var)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn join_base_and_path(base: &str, path: &str) -> String {
+    if path.starts_with('/') {
+        format!("{}{}", base, path)
+    } else {
+        format!("{}/{}", base, path)
+    }
+}
+
+fn push_fastmcmirror(urls: &mut Vec<String>, base: &str, path: &str) {
+    if !path.is_empty() {
+        urls.push(join_base_and_path(base, path));
+    }
+}
+
+pub fn build_fallback_urls(original: &str) -> Vec<String> {
+    let mut urls = vec![original.to_string()];
+
+    let Ok(parsed) = Url::parse(original) else {
+        return urls;
+    };
+
+    let host = parsed.host_str().unwrap_or_default();
+    let path = parsed.path();
+
+    if host.eq_ignore_ascii_case("resources.download.minecraft.net") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_MOJANG_ASSETS") {
+            urls.push(join_base_and_path(&base, path));
+        }
+        push_fastmcmirror(&mut urls, "https://resources.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("piston-meta.mojang.com") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_PISTON_META") {
+            urls.push(join_base_and_path(&base, path));
+        }
+        push_fastmcmirror(&mut urls, "https://launchermeta.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("launchermeta.mojang.com") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://launchermeta.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("libraries.minecraft.net") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://libraries.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("meta.fabricmc.net") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_FABRIC_META") {
+            urls.push(join_base_and_path(&base, path));
+        }
+        push_fastmcmirror(&mut urls, "https://fabricmeta.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("maven.fabricmc.net") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_FABRIC_MAVEN") {
+            urls.push(join_base_and_path(&base, path));
+        }
+        push_fastmcmirror(&mut urls, "https://fabric.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("maven.minecraftforge.net") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_FORGE_MAVEN") {
+            urls.push(join_base_and_path(&base, path));
+        }
+        push_fastmcmirror(&mut urls, "https://forge.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("maven.neoforged.net") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_NEOFORGE_MAVEN") {
+            urls.push(join_base_and_path(&base, path));
+        }
+    }
+
+    if host.eq_ignore_ascii_case("api.adoptium.net") && !path.is_empty() {
+        if let Some(base) = env_base("LIGHTY_MIRROR_ADOPTIUM") {
+            urls.push(join_base_and_path(&base, path));
+        }
+    }
+
+    urls
+}
 
 
 /// Chemin du fichier hosts (dépend de l'OS)

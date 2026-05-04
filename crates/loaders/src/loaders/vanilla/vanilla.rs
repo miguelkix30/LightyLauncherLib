@@ -11,7 +11,8 @@ use crate::types::version_metadata::
  Version, AssetsFile
 };
 use crate::types::VersionInfo;
-use lighty_core::hosts::HTTP_CLIENT as CLIENT;
+use lighty_core::hosts::{HTTP_CLIENT as CLIENT, build_fallback_urls};
+use serde::de::DeserializeOwned;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
@@ -59,7 +60,7 @@ impl Query for VanillaQuery {
         let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
         lighty_core::trace_info!("Fetching manifest from {}", manifest_url);
 
-        let manifest: PistonMetaManifest = CLIENT.get(manifest_url).send().await?.json().await?;
+        let manifest: PistonMetaManifest = fetch_json_with_fallback(manifest_url).await?;
 
         let version_info = manifest
             .versions
@@ -69,7 +70,7 @@ impl Query for VanillaQuery {
                 version: version.minecraft_version().to_string()
             })?;
 
-        let vanilla_metadata: VanillaMetaData = CLIENT.get(&version_info.url).send().await?.json().await?;
+        let vanilla_metadata: VanillaMetaData = fetch_json_with_fallback(&version_info.url).await?;
 
         Ok(vanilla_metadata)
     }
@@ -388,4 +389,34 @@ fn extract_arguments(full_data: &VanillaMetaData) -> Arguments {
             jvm: None,
         }
     }
+}
+
+async fn fetch_json_with_fallback<T: DeserializeOwned>(url: &str) -> Result<T> {
+    let mut last_error = None;
+
+    for candidate in build_fallback_urls(url) {
+        match CLIENT.get(&candidate).send().await {
+            Ok(response) => match response.error_for_status() {
+                Ok(response) => match response.json::<T>().await {
+                    Ok(value) => return Ok(value),
+                    Err(e) => {
+                        last_error = Some(format!(
+                            "JSON parse error for {}: {}",
+                            candidate, e
+                        ));
+                    }
+                },
+                Err(e) => {
+                    last_error = Some(format!("HTTP error for {}: {}", candidate, e));
+                }
+            },
+            Err(e) => {
+                last_error = Some(format!("Request error for {}: {}", candidate, e));
+            }
+        }
+    }
+
+    Err(QueryError::Conversion {
+        message: last_error.unwrap_or_else(|| format!("Failed to fetch JSON from {}", url)),
+    })
 }

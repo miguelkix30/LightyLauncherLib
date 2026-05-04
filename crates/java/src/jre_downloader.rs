@@ -87,22 +87,34 @@ where
     // Clean existing installation
     prepare_installation_directory(&runtime_dir).await?;
 
-    // Get download URL
-    let download_url = effective_distribution
-        .get_download_url(version)
+    let download_urls = build_download_candidates(&effective_distribution, version)
         .await
         .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
+    let primary_url = download_urls
+        .first()
+        .ok_or_else(|| JreError::Download("No download URLs available".to_string()))?;
 
     // Emit JavaDownloadStarted event
     if let Some(bus) = event_bus {
         // Get total bytes first
         let response = lighty_core::hosts::HTTP_CLIENT
-            .get(&download_url)
+            .get(primary_url)
+            .header("accept-encoding", "identity")
             .send()
             .await
             .map_err(|e| JreError::Download(format!("Failed to check file size: {}", e)))?;
 
-        let total_bytes = response.content_length().unwrap_or(0);
+        let encoding = response
+            .headers()
+            .get("content-encoding")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("identity");
+        let is_identity = encoding.eq_ignore_ascii_case("identity");
+        let total_bytes = if is_identity {
+            response.content_length().unwrap_or(0)
+        } else {
+            0
+        };
 
         bus.emit(Event::Java(JavaEvent::JavaDownloadStarted {
             distribution: effective_distribution.get_name().to_string(),
@@ -114,19 +126,46 @@ where
     // Download JRE archive with progress tracking
     let archive_bytes = {
         let event_bus_ref = event_bus;
-        download_file(&download_url, |current, _total| {
-            on_progress(current, _total);
-            if let Some(bus) = event_bus_ref {
-                // Only emit progress for actual chunks (not initial 0)
-                if current > 0 {
-                    bus.emit(Event::Java(JavaEvent::JavaDownloadProgress {
-                        bytes: current,
-                    }));
+        let mut last_error = None;
+        let mut downloaded = None;
+
+        for url in &download_urls {
+            let result = download_file(url, |current, _total| {
+                on_progress(current, _total);
+                if let Some(bus) = event_bus_ref {
+                    // Only emit progress for actual chunks (not initial 0)
+                    if current > 0 {
+                        bus.emit(Event::Java(JavaEvent::JavaDownloadProgress {
+                            bytes: current,
+                        }));
+                    }
+                }
+            })
+            .await;
+
+            match result {
+                Ok(bytes) => {
+                    downloaded = Some(bytes);
+                    last_error = None;
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
                 }
             }
-        })
-        .await
-        .map_err(|e| JreError::Download(format!("Download failed: {}", e)))?
+        }
+
+        match downloaded {
+            Some(bytes) => bytes,
+            None => {
+                return Err(JreError::Download(format!(
+                    "Download failed: {}",
+                    last_error
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "No candidates available for download".to_string())
+                )));
+            }
+        }
     };
 
     // Emit JavaDownloadCompleted event
@@ -197,16 +236,40 @@ where
     // Clean existing installation
     prepare_installation_directory(&runtime_dir).await?;
 
-    // Get download URL
-    let download_url = effective_distribution
-        .get_download_url(version)
+    let download_urls = build_download_candidates(&effective_distribution, version)
         .await
         .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
 
     // Download JRE archive
-    let archive_bytes = download_file(&download_url, on_progress)
-        .await
-        .map_err(|e| JreError::Download(format!("Download failed: {}", e)))?;
+    let archive_bytes = {
+        let mut last_error = None;
+        let mut downloaded = None;
+
+        for url in &download_urls {
+            match download_file(url, |current, total| on_progress(current, total)).await {
+                Ok(bytes) => {
+                    downloaded = Some(bytes);
+                    last_error = None;
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        match downloaded {
+            Some(bytes) => bytes,
+            None => {
+                return Err(JreError::Download(format!(
+                    "Download failed: {}",
+                    last_error
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "No candidates available for download".to_string())
+                )));
+            }
+        }
+    };
 
     // Extract archive based on OS
     extract_archive(&archive_bytes, &runtime_dir).await?;
@@ -218,6 +281,31 @@ where
 // ============================================================================
 // Private Helper Functions
 // ============================================================================
+
+async fn build_download_candidates(
+    distribution: &JavaDistribution,
+    version: &u8,
+) -> JreResult<Vec<String>> {
+    let mut urls = Vec::new();
+
+    let primary = distribution
+        .get_download_url(version)
+        .await
+        .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
+    urls.push(primary);
+
+    if matches!(distribution, JavaDistribution::Temurin) {
+        for candidate in [JavaDistribution::Zulu, JavaDistribution::Liberica] {
+            if candidate.supports_version(*version) {
+                if let Ok(url) = candidate.get_download_url(version).await {
+                    urls.push(url);
+                }
+            }
+        }
+    }
+
+    Ok(urls)
+}
 
 /// Constructs the runtime installation path for a given distribution and version
 fn build_runtime_path(
