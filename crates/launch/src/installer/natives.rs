@@ -17,6 +17,9 @@ use super::verifier::needs_download;
 use super::downloader::download_with_concurrency_limit;
 
 #[cfg(feature = "events")]
+use super::downloader::DownloadProgressKind;
+
+#[cfg(feature = "events")]
 use lighty_event::EventBus;
 
 /// Collects natives that need to be downloaded and paths for extraction
@@ -71,6 +74,8 @@ pub async fn download_and_extract_natives(
                 download_tasks,
                 #[cfg(feature = "events")]
                 event_bus,
+                #[cfg(feature = "events")]
+                Some(DownloadProgressKind::Natives),
             )
             .await?
         });

@@ -5,6 +5,8 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "events")]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::Semaphore;
@@ -18,6 +20,51 @@ use super::config::get_config;
 
 #[cfg(feature = "events")]
 use lighty_event::{EventBus, Event, LaunchEvent};
+
+#[cfg(feature = "events")]
+#[derive(Copy, Clone)]
+pub(crate) enum DownloadProgressKind {
+    Assets,
+    Libraries,
+    Natives,
+    Mods,
+}
+
+#[cfg(feature = "events")]
+#[derive(Clone)]
+struct ProgressState<'a> {
+    bus: &'a EventBus,
+    kind: DownloadProgressKind,
+    total: usize,
+    current: Arc<AtomicUsize>,
+}
+
+#[cfg(feature = "events")]
+impl<'a> ProgressState<'a> {
+    fn emit_progress(&self) {
+        let current = self.current.fetch_add(1, Ordering::Relaxed) + 1;
+        let event = match self.kind {
+            DownloadProgressKind::Assets => LaunchEvent::DownloadingAssets {
+                current,
+                total: self.total,
+            },
+            DownloadProgressKind::Libraries => LaunchEvent::DownloadingLibraries {
+                current,
+                total: self.total,
+            },
+            DownloadProgressKind::Natives => LaunchEvent::DownloadingNatives {
+                current,
+                total: self.total,
+            },
+            DownloadProgressKind::Mods => LaunchEvent::DownloadingMods {
+                current,
+                total: self.total,
+            },
+        };
+
+        self.bus.emit(Event::Launch(event));
+    }
+}
 
 /// Calculate exponential backoff delay with jitter to prevent thundering herd
 fn calculate_retry_delay(base_delay_ms: u64, attempt: u32) -> u64 {
@@ -207,13 +254,26 @@ async fn download_large_file_once(
 pub async fn download_with_concurrency_limit(
     tasks: Vec<(String, PathBuf)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    #[cfg(feature = "events")] progress_kind: Option<DownloadProgressKind>,
 ) -> InstallerResult<()> {
     let config = get_config();
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
+    #[cfg(feature = "events")]
+    let progress = match (event_bus, progress_kind) {
+        (Some(bus), Some(kind)) if !tasks.is_empty() => Some(ProgressState {
+            bus,
+            kind,
+            total: tasks.len(),
+            current: Arc::new(AtomicUsize::new(0)),
+        }),
+        _ => None,
+    };
     let futures: Vec<_> = tasks
         .into_iter()
         .map(|(url, dest)| {
             let sem = semaphore.clone();
+            #[cfg(feature = "events")]
+            let progress = progress.clone();
             async move {
                 let _permit = sem.acquire().await
                     .map_err(|_| InstallerError::DownloadFailed(
@@ -225,7 +285,14 @@ pub async fn download_with_concurrency_limit(
                     #[cfg(feature = "events")]
                     event_bus,
                 )
-                .await
+                .await?;
+
+                #[cfg(feature = "events")]
+                if let Some(progress) = &progress {
+                    progress.emit_progress();
+                }
+
+                Ok(())
             }
         })
         .collect();
@@ -238,13 +305,26 @@ pub async fn download_with_concurrency_limit(
 pub async fn download_small_with_concurrency_limit(
     tasks: Vec<(String, PathBuf)>,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    #[cfg(feature = "events")] progress_kind: Option<DownloadProgressKind>,
 ) -> InstallerResult<()> {
     let config = get_config();
     let semaphore = Arc::new(Semaphore::new(config.max_concurrent_downloads));
+    #[cfg(feature = "events")]
+    let progress = match (event_bus, progress_kind) {
+        (Some(bus), Some(kind)) if !tasks.is_empty() => Some(ProgressState {
+            bus,
+            kind,
+            total: tasks.len(),
+            current: Arc::new(AtomicUsize::new(0)),
+        }),
+        _ => None,
+    };
     let futures: Vec<_> = tasks
         .into_iter()
         .map(|(url, dest)| {
             let sem = semaphore.clone();
+            #[cfg(feature = "events")]
+            let progress = progress.clone();
             async move {
                 let _permit = sem.acquire().await
                     .map_err(|_| InstallerError::DownloadFailed(
@@ -256,7 +336,14 @@ pub async fn download_small_with_concurrency_limit(
                     #[cfg(feature = "events")]
                     event_bus,
                 )
-                .await
+                .await?;
+
+                #[cfg(feature = "events")]
+                if let Some(progress) = &progress {
+                    progress.emit_progress();
+                }
+
+                Ok(())
             }
         })
         .collect();

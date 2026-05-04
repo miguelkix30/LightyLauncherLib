@@ -22,6 +22,26 @@ pub enum LaunchEvent {
     InstallProgress {
         bytes: u64,
     },
+    /// Assets download progress (count-based)
+    DownloadingAssets {
+        current: usize,
+        total: usize,
+    },
+    /// Libraries download progress (count-based)
+    DownloadingLibraries {
+        current: usize,
+        total: usize,
+    },
+    /// Native libraries download progress (count-based)
+    DownloadingNatives {
+        current: usize,
+        total: usize,
+    },
+    /// Mods download progress (count-based)
+    DownloadingMods {
+        current: usize,
+        total: usize,
+    },
     /// Installation completed
     InstallCompleted {
         version: String,
