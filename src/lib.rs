@@ -158,9 +158,7 @@ pub mod launch {
         },
         arguments::Arguments as LaunchArguments,
         errors::{InstallerError, InstallerResult},
-        InstanceControl,
-        InstanceError,
-        InstanceResult,
+        instance::{InstanceControl, InstanceError, InstanceResult},
     };
 
     /// Launch argument keys for customization

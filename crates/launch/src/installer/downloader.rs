@@ -292,7 +292,7 @@ pub async fn download_with_concurrency_limit(
                     progress.emit_progress();
                 }
 
-                Ok(())
+                Ok::<(), InstallerError>(())
             }
         })
         .collect();
@@ -343,7 +343,7 @@ pub async fn download_small_with_concurrency_limit(
                     progress.emit_progress();
                 }
 
-                Ok(())
+                Ok::<(), InstallerError>(())
             }
         })
         .collect();
