@@ -15,6 +15,8 @@ use lighty_java::jre_downloader::find_java_binary;
 use lighty_java::runtime::JavaRuntime;
 use crate::arguments::{Arguments, KEY_GAME_DIRECTORY};
 use std::collections::{HashMap,HashSet};
+use lighty_core::hosts::{build_fallback_urls, HTTP_CLIENT as CLIENT};
+use lighty_core::verify_file_sha1;
 
 #[cfg(feature = "neoforge")]
 use lighty_loaders::neoforge::neoforge::{run_install_processors, NEOFORGE};
@@ -98,11 +100,14 @@ where
         ).await?;
 
         // 3. Installer les dépendances Minecraft
-        time_it!("Install delay", version.install(
-            version_data,
-            #[cfg(feature = "events")]
-            event_bus,
-        ).await?);
+            // Antes de instalar, asegurar que el asset index exista en disco.
+            ensure_asset_index_exists(version, version_data).await?;
+
+            time_it!("Install delay", version.install(
+                version_data,
+                #[cfg(feature = "events")]
+                event_bus,
+            ).await?);
 
         // 3b. Exécuter les processors NeoForge (après download des libraries)
         // TODO: Ajouter un système de processors pour les loaders qui en ont besoin (ex: NeoForge) 
@@ -358,6 +363,60 @@ fn extract_version(metadata: &VersionMetaData) -> InstallerResult<&Version> {
         VersionMetaData::Version(v) => Ok(v),
         _ => Err(InstallerError::InvalidMetadata),
     }
+}
+
+/// Ensure the asset index JSON exists on disk and is valid. Downloads it if missing or invalid.
+async fn ensure_asset_index_exists<T>(
+    builder: &T,
+    version: &Version,
+) -> InstallerResult<()>
+where
+    T: VersionInfo,
+{
+    if let Some(asset_index) = &version.assets_index {
+        let indexes_dir = builder.game_dirs().join("assets").join("indexes");
+        // Ensure directory exists
+        lighty_core::mkdir!(indexes_dir);
+
+        let index_file_path = builder.game_dirs().join("assets").join("indexes").join(format!("{}.json", asset_index.id));
+
+        // If exists and valid, nothing to do
+        if index_file_path.exists() {
+            match verify_file_sha1(&index_file_path, &asset_index.sha1).await {
+                Ok(true) => return Ok(()),
+                _ => {
+                    let _ = tokio::fs::remove_file(&index_file_path).await;
+                    lighty_core::trace_warn!("[Assets] Asset index {} missing or invalid on disk, will re-download", asset_index.id);
+                }
+            }
+        }
+
+        // Try download from fallback URLs
+        for candidate in build_fallback_urls(&asset_index.url) {
+            let resp = CLIENT.get(&candidate).send().await?;
+            if !resp.status().is_success() {
+                continue;
+            }
+
+            let bytes = resp.bytes().await?;
+            tokio::fs::write(&index_file_path, &bytes).await?;
+
+            match verify_file_sha1(&index_file_path, &asset_index.sha1).await {
+                Ok(true) => {
+                    lighty_core::trace_info!("[Assets] Asset index {} downloaded and verified", asset_index.id);
+                    return Ok(());
+                }
+                _ => {
+                    let _ = tokio::fs::remove_file(&index_file_path).await;
+                    continue;
+                }
+            }
+        }
+
+        return Err(InstallerError::DownloadFailed(format!("Failed to download or verify asset index {}", asset_index.id)));
+    }
+
+    Ok(())
 }
 
 /// Détecte l'apparition de la fenêtre du jeu et émet un événement
