@@ -5,9 +5,10 @@ use crate::loaders::vanilla::{vanilla::VanillaQuery};
 use once_cell::sync::Lazy;
 use super::fabric_metadata::FabricMetaData;
 use async_trait::async_trait;
-use lighty_core::hosts::HTTP_CLIENT as CLIENT;
+use lighty_core::hosts::{HTTP_CLIENT as CLIENT, build_fallback_urls};
 use futures::future::join_all;
 use std::collections::HashMap;
+use serde::de::DeserializeOwned;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
@@ -37,7 +38,7 @@ impl Query for FabricQuery {
             version.minecraft_version(), version.loader_version()
         );
         lighty_core::trace_debug!(url = %manifest_url, loader = "fabric", "Fetching manifest");
-        let manifest: FabricMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
+        let manifest: FabricMetaData = fetch_json_with_fallback(&manifest_url).await?;
 
         Ok(manifest)
     }
@@ -209,33 +210,72 @@ fn maven_artifact_to_path_and_url(maven_name: &str, base_url: &str) -> (String, 
     (path, full_url)
 }
 
+async fn fetch_json_with_fallback<T: DeserializeOwned>(url: &str) -> Result<T> {
+    let mut last_error = None;
+
+    for candidate in build_fallback_urls(url) {
+        match CLIENT.get(&candidate).send().await {
+            Ok(response) => match response.error_for_status() {
+                Ok(response) => match response.json::<T>().await {
+                    Ok(value) => return Ok(value),
+                    Err(e) => {
+                        last_error = Some(format!(
+                            "JSON parse error for {}: {}",
+                            candidate, e
+                        ));
+                    }
+                },
+                Err(e) => {
+                    last_error = Some(format!("HTTP error for {}: {}", candidate, e));
+                }
+            },
+            Err(e) => {
+                last_error = Some(format!("Request error for {}: {}", candidate, e));
+            }
+        }
+    }
+
+    Err(QueryError::Conversion {
+        message: last_error.unwrap_or_else(|| format!("Failed to fetch JSON from {}", url)),
+    })
+}
+
 /// Récupère le SHA1 d'un artifact Maven depuis le fichier .sha1
 async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
-    let sha1_url = format!("{}.sha1", jar_url);
+    for candidate in build_fallback_urls(jar_url) {
+        let sha1_url = format!("{}.sha1", candidate);
 
-    match CLIENT.get(&sha1_url).send().await {
-        Ok(response) if response.status().is_success() => {
-            response.text().await.ok().and_then(|text| {
-                let sha1 = text.trim().split_whitespace().next()?.to_string();
-                (sha1.len() == 40).then_some(sha1)
-            })
+        if let Ok(response) = CLIENT.get(&sha1_url).send().await {
+            if response.status().is_success() {
+                if let Ok(text) = response.text().await {
+                    if let Some(sha1) = text.trim().split_whitespace().next() {
+                        if sha1.len() == 40 {
+                            return Some(sha1.to_string());
+                        }
+                    }
+                }
+            }
         }
-        _ => None,
     }
+
+    None
 }
 
 /// Récupère la taille d'un fichier sans le télécharger (HEAD request)
 async fn fetch_file_size(url: &str) -> Option<u64> {
-    CLIENT.head(url)
-        .send()
-        .await
-        .ok()?
-        .headers()
-        .get("content-length")?
-        .to_str()
-        .ok()?
-        .parse()
-        .ok()
+    for candidate in build_fallback_urls(url) {
+        if let Ok(response) = CLIENT.head(&candidate).send().await {
+            if let Some(value) = response.headers().get("content-length") {
+                if let Ok(text) = value.to_str() {
+                    if let Ok(size) = text.parse() {
+                        return Some(size);
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn extract_arguments(full_data: &FabricMetaData) -> Arguments {
