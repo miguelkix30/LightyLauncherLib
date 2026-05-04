@@ -23,6 +23,7 @@ impl ServersResponse {
 pub struct ServerInfo {
     name: String,
     loader: String,
+    loader_version: String,
     minecraft_version: String,
     url: String,
     last_update: String,
@@ -37,6 +38,11 @@ impl ServerInfo {
     /// Retourne le type de loader (vanilla, fabric, quilt, etc.)
     pub fn loader(&self) -> &str {
         &self.loader
+    }
+
+    /// Retourne la version du loader
+    pub fn loader_version(&self) -> &str {
+        &self.loader_version
     }
 
     /// Retourne la version Minecraft
