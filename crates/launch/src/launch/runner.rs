@@ -540,7 +540,8 @@ async fn detect_window_appearance(
 /// Vérifie si un processus a une fenêtre visible (Windows uniquement)
 #[cfg(all(windows, feature = "events"))]
 fn has_visible_window(pid: u32) -> bool {
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
     };

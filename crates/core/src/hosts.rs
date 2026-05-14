@@ -73,6 +73,7 @@ pub fn build_fallback_urls(original: &str) -> Vec<String> {
     let path = parsed.path();
 
     if host.eq_ignore_ascii_case("resources.download.minecraft.net") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com/assets", path);
         if let Some(base) = env_base("LIGHTY_MIRROR_MOJANG_ASSETS") {
             urls.push(join_base_and_path(&base, path));
         }
@@ -80,6 +81,7 @@ pub fn build_fallback_urls(original: &str) -> Vec<String> {
     }
 
     if host.eq_ignore_ascii_case("piston-meta.mojang.com") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com", path);
         if let Some(base) = env_base("LIGHTY_MIRROR_PISTON_META") {
             urls.push(join_base_and_path(&base, path));
         }
@@ -87,14 +89,17 @@ pub fn build_fallback_urls(original: &str) -> Vec<String> {
     }
 
     if host.eq_ignore_ascii_case("launchermeta.mojang.com") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com", path);
         push_fastmcmirror(&mut urls, "https://launchermeta.fastmcmirror.org", path);
     }
 
     if host.eq_ignore_ascii_case("libraries.minecraft.net") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com/maven", path);
         push_fastmcmirror(&mut urls, "https://libraries.fastmcmirror.org", path);
     }
 
     if host.eq_ignore_ascii_case("meta.fabricmc.net") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com/fabric-meta", path);
         if let Some(base) = env_base("LIGHTY_MIRROR_FABRIC_META") {
             urls.push(join_base_and_path(&base, path));
         }
@@ -102,6 +107,7 @@ pub fn build_fallback_urls(original: &str) -> Vec<String> {
     }
 
     if host.eq_ignore_ascii_case("maven.fabricmc.net") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com/maven", path);
         if let Some(base) = env_base("LIGHTY_MIRROR_FABRIC_MAVEN") {
             urls.push(join_base_and_path(&base, path));
         }
@@ -109,10 +115,15 @@ pub fn build_fallback_urls(original: &str) -> Vec<String> {
     }
 
     if host.eq_ignore_ascii_case("maven.minecraftforge.net") && !path.is_empty() {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com/maven", path);
         if let Some(base) = env_base("LIGHTY_MIRROR_FORGE_MAVEN") {
             urls.push(join_base_and_path(&base, path));
         }
         push_fastmcmirror(&mut urls, "https://forge.fastmcmirror.org", path);
+    }
+
+    if host.eq_ignore_ascii_case("files.minecraftforge.net") && path.starts_with("/maven") {
+        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com", path);
     }
 
     if host.eq_ignore_ascii_case("maven.neoforged.net") && !path.is_empty() {
