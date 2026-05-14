@@ -12,13 +12,19 @@ use serde::de::DeserializeOwned;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
+/// Shared cached repository for Fabric manifests.
 pub static FABRIC: Lazy<ManifestRepository<FabricQuery>> = Lazy::new(|| ManifestRepository::new());
 
+/// Sub-queries supported by the Fabric loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FabricQuery {
+    /// Merged library list (Fabric + Vanilla).
     Libraries,
+    /// Merged JVM/game argument list.
     Arguments,
+    /// Main class to launch.
     MainClass,
+    /// Full merged [`Version`] for a Fabric instance.
     FabricBuilder,
 }
 
@@ -62,7 +68,7 @@ impl Query for FabricQuery {
         extract_libraries(full_data)
     )?;
 
-        // Merger directement avec Vanilla en priorité
+        // Merge with Vanilla as the base, Fabric overriding where it provides a value
         Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
             java_version: vanilla_builder.java_version,
@@ -106,18 +112,18 @@ fn merge_arguments(vanilla: Arguments, fabric: Arguments) -> Arguments {
     }
 }
 
-/// Évite les doublons en comparant group:artifact (sans version)
+/// Merges library lists, de-duplicating by `group:artifact` (version-agnostic).
 fn merge_libraries(vanilla_libs: Vec<Library>, fabric_libs: Vec<Library>) -> Vec<Library> {
     let capacity = vanilla_libs.len() + fabric_libs.len();
     let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
 
-    // Ajouter Vanilla d'abord
+    // Insert Vanilla first
     for lib in vanilla_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
     }
 
-    // Fabric écrase Vanilla si même artifact (version plus récente)
+    // Fabric overrides Vanilla on key collision (typically a newer version)
     for lib in fabric_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
@@ -128,7 +134,7 @@ fn merge_libraries(vanilla_libs: Vec<Library>, fabric_libs: Vec<Library>) -> Vec
 
 
 
-/// Extrait "group:artifact" (sans version) pour identifier les doublons
+/// Extracts the `group:artifact` (version-agnostic) key used for dedup.
 fn extract_artifact_key(maven_name: &str) -> String {
     let mut parts = maven_name.split(':');
     match (parts.next(), parts.next()) {
@@ -138,7 +144,7 @@ fn extract_artifact_key(maven_name: &str) -> String {
 }
 
 ///-----------------------------
-/// Version optimisée avec requêtes parallèles - retourne Result pour try_join!
+/// Parallel-fetch implementation; returns `Result` for `tokio::try_join!`.
 async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
     let futures = full_data.libraries.iter().map(|lib| {
         let lib_name = lib.name.clone();
@@ -150,7 +156,7 @@ async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
             let base_url = lib_url.as_deref().unwrap_or("https://maven.fabricmc.net/");
             let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, base_url);
 
-            // Si SHA1 ou size sont manquants, on les récupère
+            // Fetch SHA1 / size from Maven only when missing from the manifest
             let (sha1, size) = if lib_sha1.is_none() || lib_size.is_none() {
                 tokio::join!(
                     async {
@@ -182,7 +188,7 @@ async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
         }
     });
 
-    // Attendre toutes les requêtes en parallèle
+    // Await all requests in parallel
     Ok(join_all(futures).await)
 }
 
@@ -194,16 +200,16 @@ fn maven_artifact_to_path_and_url(maven_name: &str, base_url: &str) -> (String, 
         _ => return (String::new(), String::new()),
     };
 
-    // Convertir group.id en chemin (ex: "org.ow2.asm" -> "org/ow2/asm")
+    // Convert group.id to a path (e.g. "org.ow2.asm" -> "org/ow2/asm")
     let group_path = group_id.replace('.', "/");
 
-    // Construire le nom du fichier JAR
+    // Build the JAR filename
     let jar_name = format!("{}-{}.jar", artifact_id, version);
 
-    // Construire le path relatif
+    // Build the relative path
     let path = format!("{}/{}/{}/{}", group_path, artifact_id, version, jar_name);
 
-    // Construire l'URL complète
+    // Build the full URL
     let base = base_url.trim_end_matches('/');
     let full_url = format!("{}/{}", base, path);
 
@@ -277,7 +283,6 @@ async fn fetch_file_size(url: &str) -> Option<u64> {
 
     None
 }
-
 fn extract_arguments(full_data: &FabricMetaData) -> Arguments {
     Arguments {
         game: full_data.arguments.game.clone(),

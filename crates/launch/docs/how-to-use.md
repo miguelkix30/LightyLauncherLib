@@ -385,7 +385,7 @@ match instance.delete_instance().await {
 
 ```toml
 [dependencies]
-lighty-launch = { version = "0.8.6", features = ["events"] }
+lighty-launch = { version = "26.5.1", features = ["events"] }
 ```
 
 Available features:

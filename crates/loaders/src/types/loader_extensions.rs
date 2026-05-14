@@ -1,10 +1,17 @@
 use crate::types::version_metadata::VersionMetaData;
 use crate::types::{Loader, VersionInfo};
 use crate::utils::error::QueryError;
+#[cfg(feature = "lighty_updater")]
 use crate::loaders::lighty_updater::lighty_updater::{LIGHTY_UPDATER, LightyQuery};
+#[cfg(feature = "neoforge")]
 use crate::loaders::neoforge::neoforge::{NeoForgeQuery, NEOFORGE};
+#[cfg(feature = "forge")]
+use crate::loaders::forge::forge::{ForgeQuery, FORGE};
+#[cfg(feature = "quilt")]
 use crate::loaders::quilt::quilt::{QuiltQuery, QUILT};
+#[cfg(feature = "fabric")]
 use crate::loaders::fabric::fabric::{FabricQuery, FABRIC};
+#[cfg(feature = "vanilla")]
 use crate::loaders::vanilla::vanilla::{VanillaQuery, VANILLA};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -87,10 +94,7 @@ where
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                // TODO: Implement Forge support
-                Err(QueryError::UnsupportedLoader(
-                    "Forge loader is not yet implemented".to_string()
-                ))
+                FORGE.get(self, ForgeQuery::ForgeBuilder).await
             }
 
             #[cfg(feature = "lighty_updater")]
@@ -133,10 +137,8 @@ where
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                // TODO: Implement Forge support
-                Err(QueryError::UnsupportedLoader(
-                    "Forge loader is not yet implemented".to_string()
-                ))
+                // Forge has no separate libraries query — use full builder
+                FORGE.get(self, ForgeQuery::ForgeBuilder).await
             }
 
             _ => {

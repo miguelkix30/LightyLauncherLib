@@ -14,7 +14,6 @@ lighty-launcher
 ├── version       // Version builders
 ├── core          // Core utilities
 ├── macros        // Utility macros
-├── tauri         // Tauri integration (with "tauri-commands" feature)
 └── prelude       // Common imports
 ```
 
@@ -432,50 +431,6 @@ let result = time_it!("my_operation", {
 
 let path = std::path::Path::new("/tmp/my_dir");
 mkdir!(path);
-```
-
----
-
-## Tauri Module (`lighty_launcher::tauri`)
-
-**Source**: `lighty-tauri`
-**Requires**: `tauri-commands` feature
-
-### Plugin
-
-| Function | Description |
-|----------|-------------|
-| `lighty_plugin()` | Main Tauri plugin with all commands |
-
-### Commands
-
-All Tauri commands are re-exported:
-- Authentication commands
-- Launch commands
-- Java distribution commands
-- Loader commands
-- Version management commands
-- Path utilities
-
-### Types
-
-| Type | Description |
-|------|-------------|
-| `AppState` | Tauri app state |
-| `VersionConfig` | Version configuration |
-| `LaunchConfig` | Launch configuration |
-| `LaunchResult` | Launch result |
-| `LoaderInfo` | Loader information |
-| `JavaDistInfo` | Java distribution info |
-
-**Usage**:
-```rust
-use lighty_launcher::tauri::lighty_plugin;
-
-tauri::Builder::default()
-    .plugin(lighty_plugin())
-    .run(tauri::generate_context!())
-    .expect("error running tauri application");
 ```
 
 ---

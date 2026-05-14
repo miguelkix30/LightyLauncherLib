@@ -5,6 +5,13 @@ use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Mutex};
 use tokio::task::JoinHandle;
 
+/// TTL-keyed async cache with thundering-herd protection.
+///
+/// `store` holds the actual `(value, expires_at)` entries; `fetch_locks`
+/// holds per-key `Arc<Mutex<()>>` so that concurrent callers asking for
+/// the same key serialize behind a single fetch instead of each issuing
+/// their own. When constructed with [`Self::with_smart_cleanup`], a
+/// background task evicts expired entries on an adaptive schedule.
 #[derive(Debug)]
 pub struct Cache<K, V> {
     store: Arc<RwLock<HashMap<K, (V, Instant)>>>,
@@ -17,6 +24,10 @@ where
     K: Eq + Hash + Clone + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
+    /// Creates an empty cache without a background cleanup task.
+    ///
+    /// Expired entries are evicted lazily on read. Use this when you don't
+    /// want a long-running task tied to the cache's lifetime.
     pub fn new() -> Self {
         Self {
             store: Arc::new(RwLock::new(HashMap::new())),
@@ -25,6 +36,11 @@ where
         }
     }
 
+    /// Creates a cache with a background task that evicts expired entries.
+    ///
+    /// The cleanup loop wakes up on demand based on the next expiry time
+    /// (clamped to 1s..=5min) and removes everything past its TTL. The
+    /// task is aborted when the [`Cache`] is dropped.
     pub fn with_smart_cleanup() -> Self {
         let store: Arc<RwLock<HashMap<K, (V, Instant)>>> =
             Arc::new(RwLock::new(HashMap::new()));
@@ -100,12 +116,17 @@ where
         }
     }
 
+    /// Inserts (or replaces) an entry with the given TTL.
     pub async fn insert_with_ttl(&self, key: K, value: V, ttl: Duration) {
         let mut store = self.store.write().await;
         let expire_at = Instant::now() + ttl;
         store.insert(key, (value, expire_at));
     }
 
+    /// Returns the cached value for `key` if present and unexpired.
+    ///
+    /// Expired entries are removed under a write lock using double-check
+    /// locking so that a concurrent refresh isn't accidentally dropped.
     pub async fn get_with_ttl(&self, key: &K) -> Option<V> {
         // Fast path: read lock
         let store = self.store.read().await;
@@ -116,11 +137,12 @@ where
                 return Some(value.clone());
             }
 
-            // Entry expired - need to remove it
-            // Don't keep read lock while acquiring write lock
+            // Entry expired — drop the read lock before requesting the write
+            // lock. Holding both would deadlock with any concurrent writer.
             drop(store);
 
-            // Acquire write lock and re-check (double-check locking)
+            // Double-checked locking: another task may have refreshed the
+            // entry between the read-lock release and the write-lock acquire.
             let mut store = self.store.write().await;
 
             // Re-validate: another thread might have refreshed/removed it
@@ -155,7 +177,10 @@ where
             return Ok(v);
         }
 
-        // Get or create a lock for this specific key
+        // Per-key Arc<Mutex<()>>: this is the thundering-herd guard. It does
+        // NOT protect the value store — only ensures a single in-flight
+        // fetch per key. Other callers wait here and read the freshly
+        // populated value on the next get_with_ttl().
         let lock = {
             let mut locks = self.fetch_locks.write().await;
             locks.entry(key.clone())
@@ -163,7 +188,7 @@ where
                 .clone()
         };
 
-        // Acquire the lock for this key (only first caller proceeds, others wait)
+        // Only the first caller proceeds; the rest queue on this mutex.
         let _guard = lock.lock().await;
 
         // Double-check: another thread might have populated the cache while we waited
@@ -201,16 +226,20 @@ where
         }
     }
 
+    /// Removes every entry in the cache.
     pub async fn clear(&self) {
         let mut store = self.store.write().await;
         store.clear();
     }
 
+    /// Returns the number of entries currently stored (including expired
+    /// ones not yet evicted).
     pub async fn len(&self) -> usize {
         let store = self.store.read().await;
         store.len()
     }
 
+    /// Returns `true` if [`Self::len`] would be zero.
     pub async fn is_empty(&self) -> bool {
         let store = self.store.read().await;
         store.is_empty()

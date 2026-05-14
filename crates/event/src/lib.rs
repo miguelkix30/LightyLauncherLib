@@ -71,7 +71,9 @@ impl EventBus {
     ///
     /// # Arguments
     /// - `capacity`: Maximum number of events to buffer. If this limit is exceeded
-    ///               and receivers are slow, the oldest events will be dropped.
+    ///               and receivers are slow, the oldest events will be dropped
+    ///               (standard broadcast-channel semantics), and the affected
+    ///               receivers will surface [`EventReceiveError::Lagged`].
     ///
     /// # Recommended values
     /// - 100-1000 for most use cases

@@ -1,24 +1,25 @@
+//! Serde types describing a LightyUpdater server response.
+//!
+//! [`ServersResponse`] is the top-level listing the server returns;
+//! [`ServerInfo`] is one entry inside it; [`LightyMetadata`] is the
+//! optional override document the server publishes for each instance.
+
 use serde::{Deserialize, Serialize};
 
-// Response du serveur contenant la liste des serveurs disponibles
+/// Server response listing every instance the LightyUpdater publishes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServersResponse {
     servers: Vec<ServerInfo>,
 }
 
 impl ServersResponse {
-    /// Retourne la liste des serveurs disponibles
-    pub fn servers(&self) -> &[ServerInfo] {
-        &self.servers
-    }
-
-    /// Trouve un serveur par son nom
+    /// Finds the server entry matching `name`, if any.
     pub fn find_by_name(&self, name: &str) -> Option<&ServerInfo> {
         self.servers.iter().find(|s| s.name == name)
     }
 }
 
-// Info d'un serveur spécifique
+/// Per-server info entry returned by the LightyUpdater listing endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
     name: String,
@@ -55,20 +56,22 @@ impl ServerInfo {
         &self.url
     }
 
-    /// Retourne la date de dernière mise à jour
+    /// Returns the timestamp of the last server update.
     pub fn last_update(&self) -> &str {
         &self.last_update
     }
 }
 
 //STRUCTURE OF LIGHTY_UPDATER METADATA
-/// Tous les champs sont optionnels car le serveur LightyUpdater
-/// peut ne pas fournir toutes les métadonnées. Les champs manquants
-/// seront complétés par le loader de base (vanilla/fabric/quilt/etc.)
+/// Metadata document returned by a LightyUpdater server.
+///
+/// Every field is optional: the LightyUpdater server may supply only the
+/// overrides it cares about, and the base loader (vanilla / fabric / quilt
+/// / ...) fills in everything else.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LightyMetadata {
-    #[serde(skip)]  // Ne pas sérialiser server_info car il vient d'une autre requête
+    #[serde(skip)]  // server_info comes from a separate request, never serialized into LightyMetadata
     pub server_info: Option<ServerInfo>,
     pub main_class: Option<MainClass>,
     pub java_version: Option<JavaVersion>,

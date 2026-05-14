@@ -60,7 +60,7 @@ pub struct MicrosoftAuth {
 }
 
 impl MicrosoftAuth {
-    /// Create a new Microsoft authenticator
+    /// Creates a new Microsoft authenticator.
     ///
     /// # Arguments
     /// - `client_id`: Your Azure AD application client ID

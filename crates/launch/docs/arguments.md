@@ -39,7 +39,7 @@ The launch system uses placeholders that are replaced with actual values at laun
 | `${version_type}` | Version type | `"release"` or `"snapshot"` |
 | `${assets_index_name}` | Asset index ID | `"16"` |
 | `${launcher_name}` | Launcher name | `"MyLauncher"` |
-| `${launcher_version}` | Launcher version | `"0.8.6"` |
+| `${launcher_version}` | Launcher version | `"26.5.1"` |
 
 ## JVM Arguments
 
@@ -235,7 +235,7 @@ jvm_args.push("/path/lib1.jar:/path/lib2.jar:...");
 java \
   -Djava.library.path=/tmp/natives-xxxxx \
   -Dminecraft.launcher.brand=MyLauncher \
-  -Dminecraft.launcher.version=0.8.6 \
+  -Dminecraft.launcher.version=26.5.1 \
   -Xmx4G \
   -Xms2G \
   -XX:+UseG1GC \

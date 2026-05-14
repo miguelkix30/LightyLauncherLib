@@ -6,6 +6,17 @@ use std::sync::Arc;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
+/// Caches `Query` results so each remote manifest is fetched at most once
+/// per TTL window.
+///
+/// Layered cache:
+/// - `raw_version_cache` keeps the raw manifest (the thing
+///   [`Query::fetch_full_data`] returns) keyed by instance name.
+/// - `query_cache` keeps the extracted sub-query results keyed by
+///   `(instance, sub-query)`.
+///
+/// Concurrent calls for the same key share a single fetch via the inner
+/// [`Cache::get_or_try_insert_with`] mechanism.
 pub struct ManifestRepository<F: Query> {
     query_cache: Arc<Cache<QueryKey<F::Query>, Arc<F::Data>>>,
     raw_version_cache: Arc<Cache<String, Arc<<F as Query>::Raw>>>,
@@ -13,6 +24,7 @@ pub struct ManifestRepository<F: Query> {
 }
 
 impl<F: Query> ManifestRepository<F> {
+    /// Creates an empty repository with smart-cleanup-enabled caches.
     pub fn new() -> Self {
         Self {
             query_cache: Arc::new(Cache::with_smart_cleanup()),

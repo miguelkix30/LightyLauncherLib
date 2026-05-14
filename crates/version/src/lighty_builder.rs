@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 use once_cell::sync::Lazy;
 use directories::ProjectDirs;
 
-/// Builder pour LightyUpdater avec une sémantique claire
+/// Builder for LightyUpdater-managed instances.
+///
+/// Unlike [`super::VersionBuilder`], `loader_version` here holds the
+/// LightyUpdater server URL: the actual loader and Minecraft version are
+/// fetched from that server at install time.
 #[derive(Debug, Clone)]
 pub struct LightyVersionBuilder<'a> {
     pub name: String,
@@ -16,6 +20,10 @@ pub struct LightyVersionBuilder<'a> {
 }
 
 impl<'a> LightyVersionBuilder<'a> {
+    /// Creates a new `LightyVersionBuilder`.
+    ///
+    /// `server_url` is the LightyUpdater server endpoint; the loader and
+    /// Minecraft version are resolved from its response at install time.
     pub fn new(
         name: &str,
         server_url: &str,

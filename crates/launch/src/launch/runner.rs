@@ -1,3 +1,4 @@
+#[cfg(not(feature = "events"))]
 use lighty_java::JreError;
 use lighty_core::time_it;
 use lighty_java::jre_downloader::jre_download;
@@ -18,12 +19,28 @@ use std::collections::{HashMap,HashSet};
 use lighty_core::hosts::{build_fallback_urls, HTTP_CLIENT as CLIENT};
 use lighty_core::verify_file_sha1;
 
+#[cfg(any(feature = "neoforge", feature = "forge"))]
+use crate::installer::libraries::{collect_library_tasks, download_libraries};
 #[cfg(feature = "neoforge")]
-use lighty_loaders::neoforge::neoforge::{run_install_processors, NEOFORGE};
+use lighty_loaders::neoforge::neoforge::{
+    extract_install_profile_libraries as neoforge_install_profile_libraries,
+    run_install_processors as neoforge_run_install_processors,
+    NEOFORGE,
+};
+#[cfg(feature = "forge")]
+use lighty_loaders::forge::forge::{
+    extract_install_profile_libraries as forge_install_profile_libraries,
+    run_install_processors as forge_run_install_processors,
+    FORGE,
+};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
+/// Extension trait that adds [`Self::launch`] to any installable instance.
+///
+/// Implemented automatically for every type that satisfies the launch
+/// pipeline's trait bounds (see the blanket impl below).
 pub trait Launch {
     /// Launch the game with a builder pattern
     ///
@@ -54,7 +71,7 @@ pub trait Launch {
         Self: Sized;
 }
 
-// Implémentation générique pour tout type implémentant VersionInfo + les traits nécessaires
+// Blanket impl for any type that implements VersionInfo plus the required traits
 impl<T> Launch for T
 where
     T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
@@ -81,7 +98,7 @@ where
 {
         let username = &profile.username;
         let uuid = &profile.uuid;
-        // 1. Préparer les métadonnées du loader
+        // 1. Fetch the loader metadata
         let metadata = prepare_metadata(
             version,
             #[cfg(feature = "events")]
@@ -90,7 +107,7 @@ where
 
         let version_data = extract_version(&metadata)?;
 
-        // 2. S'assurer que Java est installé
+        // 2. Make sure Java is installed
         let java_path = ensure_java_installed(
             version,
             version_data,
@@ -99,26 +116,55 @@ where
             event_bus,
         ).await?;
 
-        // 3. Installer les dépendances Minecraft
-            // Antes de instalar, asegurar que el asset index exista en disco.
-            ensure_asset_index_exists(version, version_data).await?;
+        // 3. Install Minecraft dependencies (libraries, natives, client, assets)
+        // Before install, ensure the asset index exists on disk (with fallbacks).
+        ensure_asset_index_exists(version, version_data).await?;
+        time_it!("Install delay", version.install(
+            version_data,
+            #[cfg(feature = "events")]
+            event_bus,
+        ).await?);
 
-            time_it!("Install delay", version.install(
-                version_data,
-                #[cfg(feature = "events")]
-                event_bus,
-            ).await?);
-
-        // 3b. Exécuter les processors NeoForge (après download des libraries)
-        // TODO: Ajouter un système de processors pour les loaders qui en ont besoin (ex: NeoForge) 
-        // (à exécuter après l'installation des libraries mais avant le lancement du jeu)
+        // 3b. Forge-family install_profile libraries + processors.
+        //
+        // For Forge and NeoForge, the install_profile.json libraries are
+        // downloaded through the shared library installer (parallel +
+        // retry + SHA1) so the processor JARs and the runtime-required
+        // `forge:universal` artifact land on disk. Only the processor
+        // execution stays inside each loader crate (it's a per-loader
+        // Java exec with different maven URLs / extract subdirs).
+        //
+        // TODO: generalize this into a per-loader post-install hook for any
+        // loader that needs one (currently only Forge / NeoForge do).
         #[cfg(feature = "neoforge")]
         if matches!(version.loader(), Loader::NeoForge) {
             let install_profile = NEOFORGE.get_raw(version).await?;
-            run_install_processors(version, install_profile.as_ref()).await?;
+            let profile_libs = neoforge_install_profile_libraries(install_profile.as_ref());
+            let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+            download_libraries(
+                profile_tasks,
+                #[cfg(feature = "events")]
+                event_bus,
+            )
+            .await?;
+            neoforge_run_install_processors(version, install_profile.as_ref()).await?;
         }
 
-        // 4. Lancer le jeu
+        #[cfg(feature = "forge")]
+        if matches!(version.loader(), Loader::Forge) {
+            let install_profile = FORGE.get_raw(version).await?;
+            let profile_libs = forge_install_profile_libraries(install_profile.as_ref());
+            let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+            download_libraries(
+                profile_tasks,
+                #[cfg(feature = "events")]
+                event_bus,
+            )
+            .await?;
+            forge_run_install_processors(version, install_profile.as_ref()).await?;
+        }
+
+        // 4. Launch the game
         execute_game(
             version,
             version_data,
@@ -135,7 +181,7 @@ where
         ).await
 }
 
-/// Récupère les métadonnées complètes du loader
+/// Fetches the loader's full metadata document.
 async fn prepare_metadata<T>(
     builder: &mut T,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
@@ -145,6 +191,7 @@ where
 {
     lighty_core::trace_debug!("[Launch] Fetching metadata for loader: {:?}", builder.loader());
 
+    #[cfg(feature = "events")]
     let loader_name = format!("{:?}", builder.loader());
 
     #[cfg(feature = "events")]
@@ -172,7 +219,7 @@ where
     Ok(metadata)
 }
 
-/// S'assure que Java est installé et retourne le chemin vers l'exécutable
+/// Ensures Java is installed for `version` and returns the binary path.
 async fn ensure_java_installed<T>(
     builder: &T,
     version: &Version,
@@ -184,7 +231,7 @@ where
 {
     let java_version = version.java_version.major_version;
 
-    // Vérifier si Java est déjà installé
+    // Look for an existing Java install before downloading
     match find_java_binary(builder.java_dirs(), java_distribution, &java_version).await {
         Ok(path) => {
             lighty_core::trace_info!("[Java] Java {} already installed at: {:?}", java_version, path);
@@ -238,7 +285,7 @@ where
     }
 }
 
-/// Lance le jeu avec les arguments appropriés
+/// Spawns the game process and wires up event/console handlers.
 async fn execute_game<T>(
     builder: &T,
     version: &Version,
@@ -258,7 +305,7 @@ where
     use crate::instance::{handle_console_streams, INSTANCE_MANAGER};
     use crate::instance::manager::GameInstance;
 
-    // Construire les arguments
+    // Build the full argv (JVM args + main class + game args)
     let arguments = builder.build_arguments(
         version,
         username,
@@ -270,13 +317,8 @@ where
         raw_args,
     );
 
-    // Déterminer le "game directory" effectif
-    //
-    // Par défaut, on utilise game_dirs()/"runtime". Cependant, si
-    // un override explicite pour la variable `game_directory` est
-    // présent, on l'utilise pour que le processus Java soit lancé
-    // directement dans ce répertoire (par exemple, un gamedir
-    // éphémère fourni par un launcher externe).
+    // Determine the effective runtime directory.
+    // If an explicit `game_directory` override exists, launch from it.
     let mut runtime_dir = if let Some(dir) = arg_overrides.get(KEY_GAME_DIRECTORY) {
         let path = PathBuf::from(dir);
         lighty_core::trace_info!("[Launch] Using overridden game_directory as runtime_dir: {:?}", path);
@@ -293,7 +335,7 @@ where
         }
     }
 
-    // Créer JavaRuntime avec le chemin vers java.exe
+    // Wrap the Java binary path in a runtime helper
     let java_runtime = JavaRuntime::new(java_path);
     lighty_core::trace_info!("[Launch] Executing game in runtime_dir {:?}...", runtime_dir);
 
@@ -303,7 +345,7 @@ where
 
             lighty_core::trace_info!("[Launch] Game launched successfully, PID: {}", pid);
 
-            // Enregistrer l'instance (metadata only, no child handle)
+            // Register the instance (metadata only — the child is owned by the console task)
             let instance = GameInstance {
                 pid,
                 instance_name: builder.name().to_string(),
@@ -318,7 +360,7 @@ where
 
             INSTANCE_MANAGER.register_instance(instance).await;
 
-            // Émettre événement InstanceLaunched
+            // Emit InstanceLaunched event
             #[cfg(feature = "events")]
             if let Some(bus) = event_bus {
                 use lighty_event::{Event, InstanceLaunchedEvent};
@@ -331,15 +373,20 @@ where
                     timestamp: std::time::SystemTime::now(),
                 }));
 
-                // Spawner le détecteur de fenêtre
+                // Spawn the window-appearance watcher
                 let bus_clone = bus.clone();
                 let instance_name = builder.name().to_string();
                 let version = format!("{}-{}", builder.minecraft_version(), builder.loader_version());
-                tokio::spawn(detect_window_appearance(pid, instance_name, version, bus_clone));
+                tokio::spawn(super::window::detect_window_appearance(
+                    pid,
+                    instance_name,
+                    version,
+                    bus_clone,
+                ));
             }
 
-            // Spawner le console streaming handler
-            // This takes ownership of the child and handles all I/O until exit
+            // Spawn the console-streaming handler. It takes ownership of the
+            // child and handles all stdio until the process exits.
             tokio::spawn(handle_console_streams(
                 pid,
                 builder.name().to_string(),
@@ -357,7 +404,7 @@ where
     }
 }
 
-/// Extrait l'objet Version depuis VersionMetaData
+/// Extracts the [`Version`] payload from a [`VersionMetaData`] variant.
 fn extract_version(metadata: &VersionMetaData) -> InstallerResult<&Version> {
     match metadata {
         VersionMetaData::Version(v) => Ok(v),
@@ -378,7 +425,11 @@ where
         // Ensure directory exists
         lighty_core::mkdir!(indexes_dir);
 
-        let index_file_path = builder.game_dirs().join("assets").join("indexes").join(format!("{}.json", asset_index.id));
+        let index_file_path = builder
+            .game_dirs()
+            .join("assets")
+            .join("indexes")
+            .join(format!("{}.json", asset_index.id));
 
         // If exists and valid, nothing to do
         if index_file_path.exists() {
@@ -386,7 +437,10 @@ where
                 Ok(true) => return Ok(()),
                 _ => {
                     let _ = tokio::fs::remove_file(&index_file_path).await;
-                    lighty_core::trace_warn!("[Assets] Asset index {} missing or invalid on disk, will re-download", asset_index.id);
+                    lighty_core::trace_warn!(
+                        "[Assets] Asset index {} missing or invalid on disk, will re-download",
+                        asset_index.id
+                    );
                 }
             }
         }
@@ -403,7 +457,10 @@ where
 
             match verify_file_sha1(&index_file_path, &asset_index.sha1).await {
                 Ok(true) => {
-                    lighty_core::trace_info!("[Assets] Asset index {} downloaded and verified", asset_index.id);
+                    lighty_core::trace_info!(
+                        "[Assets] Asset index {} downloaded and verified",
+                        asset_index.id
+                    );
                     return Ok(());
                 }
                 _ => {
@@ -413,7 +470,10 @@ where
             }
         }
 
-        return Err(InstallerError::DownloadFailed(format!("Failed to download or verify asset index {}", asset_index.id)));
+        return Err(InstallerError::DownloadFailed(format!(
+            "Failed to download or verify asset index {}",
+            asset_index.id
+        )));
     }
 
     Ok(())
@@ -461,7 +521,10 @@ async fn detect_window_appearance(
         // Sur les autres plateformes, attendre un délai fixe (approximation)
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-        lighty_core::trace_info!("[Launch] Assuming window appeared for PID: {} (non-Windows platform)", pid);
+        lighty_core::trace_info!(
+            "[Launch] Assuming window appeared for PID: {} (non-Windows platform)",
+            pid
+        );
 
         event_bus.emit(lighty_event::Event::InstanceWindowAppeared(
             lighty_event::InstanceWindowAppearedEvent {

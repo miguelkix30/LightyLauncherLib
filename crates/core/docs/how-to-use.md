@@ -413,7 +413,7 @@ async fn main() {
 
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["events", "tracing"] }
+lighty-core = { version = "26.5.1", features = ["events", "tracing"] }
 ```
 
 Available features:

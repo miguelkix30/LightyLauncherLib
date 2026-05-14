@@ -354,7 +354,7 @@ match AppState::new("com".into(), "MyOrg".into(), "".into()) {
 
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["events"] }
+lighty-core = { version = "26.5.1", features = ["events"] }
 ```
 
 When `events` feature is enabled:
@@ -380,7 +380,7 @@ zip_extract(reader, output).await?;
 
 ```toml
 [dependencies]
-lighty-core = { version = "0.8.6", features = ["tracing"] }
+lighty-core = { version = "26.5.1", features = ["tracing"] }
 ```
 
 When `tracing` feature is enabled:

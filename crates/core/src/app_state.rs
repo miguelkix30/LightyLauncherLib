@@ -1,3 +1,10 @@
+//! Global application state: qualifier / organization / application
+//! identifiers and the derived [`directories::ProjectDirs`] used to locate
+//! per-platform config and data directories.
+//!
+//! [`AppState::new`] must be called once at startup, before any function
+//! that reads [`AppState::get_project_dirs`] or related getters.
+
 use directories::ProjectDirs;
 use once_cell::sync::{Lazy, OnceCell};
 use crate::errors::{AppStateError, AppStateResult};
@@ -24,6 +31,11 @@ static LAZY_PROJECT_DIRS: Lazy<ProjectDirs> = Lazy::new(get_project_dirs_clone);
 // APP STATE
 // ============================================
 
+/// Zero-sized handle to the global application state.
+///
+/// Holds no data — every method is associated, reading from process-wide
+/// `OnceCell` storage. The instance returned by [`Self::new`] is only used
+/// to enforce "called at least once" at the type level.
 pub struct AppState;
 
 impl AppState {
@@ -56,7 +68,9 @@ impl AppState {
         Ok(Self)
     }
 
-    /// Get the project directories (lazy-initialized)
+    /// Returns the project directories (lazy-initialized).
+    ///
+    /// Panics if accessed before [`Self::new`] has been called.
     pub fn get_project_dirs() -> &'static Lazy<ProjectDirs> {
         &LAZY_PROJECT_DIRS
     }
@@ -83,17 +97,17 @@ impl AppState {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
-    /// Get the organization name
+    /// Returns the organization name, or `None` if [`Self::new`] hasn't been called.
     pub fn get_organization() -> Option<&'static String> {
         ORGANIZATION.get()
     }
 
-    /// Get the qualifier
+    /// Returns the qualifier, or `None` if [`Self::new`] hasn't been called.
     pub fn get_qualifier() -> Option<&'static String> {
         QUALIFIER.get()
     }
 
-    /// Get the application name
+    /// Returns the application name, or `None` if [`Self::new`] hasn't been called.
     pub fn get_application() -> Option<&'static String> {
         APPLICATION.get()
     }

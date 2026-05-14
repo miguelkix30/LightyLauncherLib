@@ -286,10 +286,10 @@ Enable only the loaders you need:
 ```toml
 [dependencies]
 # All loaders
-lighty-launcher = { version = "0.8.6", features = ["all-loaders"] }
+lighty-launcher = { version = "26.5.1", features = ["all-loaders"] }
 
 # Specific loaders
-lighty-launcher = { version = "0.8.6", features = ["vanilla", "fabric", "quilt", "neoforge"] }
+lighty-launcher = { version = "26.5.1", features = ["vanilla", "fabric", "quilt", "neoforge"] }
 ```
 
 Available features:

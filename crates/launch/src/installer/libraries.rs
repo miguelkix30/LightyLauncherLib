@@ -25,6 +25,14 @@ pub async fn collect_library_tasks(
 
     for lib in libraries {
         let Some(url) = &lib.url else { continue };
+        // Forge-family installers list libraries with empty URLs when the
+        // file is produced by post-install processors (e.g. `forge:client`)
+        // or bundled inside the installer JAR (extracted separately).
+        // They mustn't be sent to the downloader — reqwest can't build a
+        // request from an empty URL.
+        if url.is_empty() {
+            continue;
+        }
         let Some(path_str) = &lib.path else { continue };
 
         let path = parent_path.join(path_str);

@@ -308,9 +308,9 @@ Enable specific loaders in `Cargo.toml`:
 
 ```toml
 [dependencies]
-lighty-launcher = { version = "0.8.6", features = ["all-loaders"] }
+lighty-launcher = { version = "26.5.1", features = ["all-loaders"] }
 # or
-lighty-loaders = { version = "0.8.6", features = ["vanilla", "fabric", "quilt"] }
+lighty-loaders = { version = "26.5.1", features = ["vanilla", "fabric", "quilt"] }
 ```
 
 **Available features**:

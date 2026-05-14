@@ -60,6 +60,11 @@ use super::INSTANCE_MANAGER;
 /// let size = instance.size_of_instance(&version);
 /// println!("Total size: {}", size.total_human());
 /// ```
+//
+// `async fn` in traits is accepted here: callers always await the returned
+// future on the same task, so the absence of an explicit `+ Send` bound is
+// fine in practice.
+#[allow(async_fn_in_trait)]
 pub trait InstanceControl: VersionInfo {
     /// Get the first PID of a running instance
     ///

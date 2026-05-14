@@ -165,6 +165,7 @@ where
 
     // Manual extraction with validation
     let mut entries = ar.entries()?;
+    #[cfg(feature = "events")]
     let mut files_extracted = 0usize;
 
     while let Some(entry) = entries.next().await {
@@ -201,7 +202,10 @@ where
         // Extract safely
         entry.unpack(&dest).await?;
 
-        files_extracted += 1;
+        #[cfg(feature = "events")]
+        {
+            files_extracted += 1;
+        }
 
         // Emit progress event every 10 files
         #[cfg(feature = "events")]
@@ -236,8 +240,12 @@ fn sanitize_file_path(path: &str) -> PathBuf {
         .collect()
 }
 
-/// Validates that a path is within the base directory using path components
-/// This is more robust than canonicalize() which fails on non-existent paths
+/// Validates that `path` resolves inside `base` using component folding.
+///
+/// Used during extraction (before the file exists on disk), so we cannot
+/// rely on [`std::fs::canonicalize`]. Instead we walk the components,
+/// popping on `..`, and verify the normalized form starts with the
+/// normalized base.
 fn is_path_within_base(path: &Path, base: &Path) -> ExtractResult<bool> {
     // Normalize both paths by collecting components
     let normalized_path: PathBuf = path.components()

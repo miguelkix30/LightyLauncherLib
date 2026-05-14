@@ -1,11 +1,11 @@
 use std::path::Path;
 
-/// Trait générique pour représenter les informations d'une version
+/// Generic view of an installable instance.
 ///
-/// Ce trait est utilisé par `ManifestRepository` pour supporter différents types de versions
-/// (Version standard, LightyVersion, etc.)
+/// Used by `ManifestRepository` to support different builder types
+/// (`VersionBuilder`, `LightyVersionBuilder`, etc.) under a single interface.
 ///
-/// # Exemples
+/// # Examples
 ///
 /// ```rust
 /// use lighty_loaders::types::VersionInfo;
@@ -19,46 +19,46 @@ use std::path::Path;
 /// }
 /// ```
 pub trait VersionInfo: Clone + Send + Sync {
-    /// Type du loader utilisé (Vanilla, Fabric, NeoForge, etc.)
+    /// Loader type (Vanilla, Fabric, NeoForge, etc.).
     type LoaderType: Clone + Send + Sync + std::fmt::Debug;
 
-    /// Nom de la version (identifiant unique du profil)
+    /// Instance name (unique profile identifier).
     fn name(&self) -> &str;
 
-    /// Version du loader (ou URL du serveur pour LightyVersion)
+    /// Loader version (or server URL for `LightyVersionBuilder`).
     ///
-    /// Exemples : "0.15.0" pour Fabric, "21.0.0" pour NeoForge
+    /// Examples: `"0.15.0"` for Fabric, `"21.0.0"` for NeoForge.
     fn loader_version(&self) -> &str;
 
-    /// Version de Minecraft
+    /// Minecraft version.
     ///
-    /// Exemples : "1.20.1", "1.19.4"
+    /// Examples: `"1.20.1"`, `"1.19.4"`.
     fn minecraft_version(&self) -> &str;
 
-    /// Répertoire de jeu (contient les assets, libraries, versions, etc.)
+    /// Game directory (holds assets, libraries, versions, etc.).
     fn game_dirs(&self) -> &Path;
 
-    /// Répertoire Java (contient les installations JRE)
+    /// Java directory (holds JRE installations).
     fn java_dirs(&self) -> &Path;
 
-    /// Retourne le loader utilisé
+    /// Returns the loader.
     fn loader(&self) -> &Self::LoaderType;
 
-    // === Méthodes utilitaires avec implémentations par défaut ===
+    // === Utility methods with default implementations ===
 
-    /// Vérifie si le répertoire de jeu existe
+    /// Returns whether the game directory exists on disk.
     fn game_dir_exists(&self) -> bool {
         self.game_dirs().exists()
     }
 
-    /// Vérifie si le répertoire Java existe
+    /// Returns whether the Java directory exists on disk.
     fn java_dir_exists(&self) -> bool {
         self.java_dirs().exists()
     }
 
-    /// Retourne un identifiant complet de la version
+    /// Returns a fully qualified version identifier.
     ///
-    /// Format : `{name}-{minecraft_version}-{loader_version}`
+    /// Format: `{name}-{minecraft_version}-{loader_version}`.
     fn full_identifier(&self) -> String {
         format!(
             "{}-{}-{}",
@@ -68,16 +68,14 @@ pub trait VersionInfo: Clone + Send + Sync {
         )
     }
 
-    /// Retourne les chemins importants sous forme de tuple
-    ///
-    /// Utile pour le logging ou le debugging
+    /// Returns the (game_dir, java_dir) tuple — useful for logging.
     fn paths(&self) -> (&Path, &Path) {
         (self.game_dirs(), self.java_dirs())
     }
 
-    /// Vérifie si l'instance de jeu est installée
+    /// Returns whether the instance is installed.
     ///
-    /// Une instance est considérée comme installée si son répertoire de jeu existe
+    /// An instance is considered installed when its game directory exists.
     fn is_installed(&self) -> bool {
         self.game_dirs().exists()
     }

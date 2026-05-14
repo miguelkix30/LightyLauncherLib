@@ -1,6 +1,14 @@
+//! Serde mirrors of the JSON documents returned by Mojang's `piston-meta`.
+//!
+//! Most field names follow upstream camelCase via `#[serde(rename_all)]`
+//! or per-field `#[serde(rename)]`. Every struct here is intentionally a
+//! transparent view of the wire format — see `vanilla.rs` for the typed
+//! `extract_*` functions that translate these into [`crate::types::version_metadata`].
+
 use std::collections::HashMap;
 use serde::Deserialize;
 
+/// Top-level `version_manifest_v2.json` document.
 #[derive(Debug, Deserialize)]
 pub struct PistonMetaManifest {
     pub latest: Latest,
@@ -34,7 +42,7 @@ pub struct VanillaMetaData {
     pub id: String,
     pub main_class: String,
     #[serde(rename="type")]
-    pub type_field: String, // `type` est un mot réservé en Rust
+    pub type_field: String, // `type` is a reserved keyword in Rust
     pub release_time: String,
     pub time: String,
     pub minimum_launcher_version: Option<u32>,
@@ -140,7 +148,7 @@ pub struct RuleOS {
 #[derive(Default)]
 pub struct Arguments {
     #[serde(default)]
-    pub game: Vec<serde_json::Value>, // peut être String ou Object
+    pub game: Vec<serde_json::Value>, // may be String or Object
     #[serde(default)]
     pub jvm: Vec<serde_json::Value>,
 }

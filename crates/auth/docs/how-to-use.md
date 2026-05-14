@@ -353,7 +353,7 @@ async fn main() {
 
 ```toml
 [dependencies]
-lighty-auth = { version = "0.8.6", features = ["events", "tracing"] }
+lighty-auth = { version = "26.5.1", features = ["events", "tracing"] }
 ```
 
 Available features:

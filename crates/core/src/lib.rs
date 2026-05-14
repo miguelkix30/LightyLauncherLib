@@ -1,3 +1,12 @@
+//! Foundation utilities shared by every Lighty Launcher crate.
+//!
+//! This crate has no `lighty-*` dependencies; everything else depends on it.
+//! It groups the cross-cutting helpers needed throughout the launcher:
+//! [`AppState`] for project directories, an HTTP client and host-file guard
+//! in [`hosts`], async [`download`] / [`extract`] / [`hash`] helpers, an OS
+//! and architecture detection layer in [`system`], and conditional logging
+//! [`macros`].
+
 pub mod system;
 pub mod macros;
 pub mod hosts;
