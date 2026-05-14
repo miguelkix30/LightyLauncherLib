@@ -10,7 +10,7 @@
 //! - Assets (textures, sounds, etc.)
 //! - Mods (optional modifications)
 
-use super::{libraries, natives, client, assets, mods};
+use super::ressources::{libraries, natives, client, assets, mods};
 use lighty_loaders::types::{VersionInfo, version_metadata::Version};
 use lighty_core::{mkdir, time_it};
 use crate::errors::InstallerResult;

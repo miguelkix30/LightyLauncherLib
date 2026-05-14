@@ -61,3 +61,34 @@ pub async fn fetch_file_size(url: &str) -> Option<u64> {
 pub async fn fetch_maven_metadata(url: &str) -> (Option<String>, Option<u64>) {
     tokio::join!(fetch_maven_sha1(url), fetch_file_size(url))
 }
+
+/// Probes a list of Maven bases (in order) and returns the first one
+/// that serves `relative_path` with a non-zero `Content-Length`.
+///
+/// Used by legacy Forge to resolve `versionInfo.libraries` entries that
+/// ship without an explicit `url` field — the original Forge installer
+/// tried Mojang libs, Forge Maven, and Maven Central in turn.
+///
+/// `bases` must already have a trailing `/`. Returns the full URL on
+/// success, `None` if every base 404s or returns an empty body.
+pub async fn probe_maven_bases(bases: &[&str], relative_path: &str) -> Option<String> {
+    for base in bases {
+        let url = format!("{}{}", base, relative_path);
+        if let Ok(resp) = CLIENT.head(&url).send().await {
+            if resp.status().is_success() {
+                // Treat zero-byte responses as not-found: some CDNs answer
+                // 200 with an empty body when the artifact is missing.
+                let len = resp
+                    .headers()
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(0);
+                if len > 0 {
+                    return Some(url);
+                }
+            }
+        }
+    }
+    None
+}

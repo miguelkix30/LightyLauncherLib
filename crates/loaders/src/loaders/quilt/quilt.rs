@@ -16,6 +16,9 @@ use crate::types::version_metadata::
 {Library, VersionMetaData, Arguments, MainClass, Version};
 
 
+/// QuiltMC metadata server (returns the `profile/json` manifest).
+const QUILT_META: &str = "https://meta.quiltmc.org/v3/versions/loader";
+
 /// Shared cached repository for Quilt manifests.
 pub static QUILT: Lazy<ManifestRepository<QuiltQuery>> = Lazy::new(|| ManifestRepository::new());
 
@@ -46,8 +49,10 @@ impl Query for QuiltQuery {
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<QuiltMetaData> {
         let manifest_url = format!(
-            "https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json",
-            version.minecraft_version(), version.loader_version()
+            "{}/{}/{}/profile/json",
+            QUILT_META,
+            version.minecraft_version(),
+            version.loader_version()
         );
         lighty_core::trace_debug!(url = %manifest_url, loader = "quilt", "Fetching manifest");
         let manifest: QuiltMetaData = CLIENT.get(manifest_url).send().await?.json().await?;

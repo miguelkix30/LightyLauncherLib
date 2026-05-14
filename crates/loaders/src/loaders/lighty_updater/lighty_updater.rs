@@ -183,7 +183,7 @@ impl Query for LightyQuery {
             java_dirs: version.java_dirs().to_path_buf(),
         };
 
-        // 1. Fetch du loader de base avec l'override
+        // 1. Fetch the base loader's metadata, using the override
         lighty_core::trace_debug!("[LightyUpdater] Calling merge_metadata with loader={}", server_info.loader());
         let mut builder = merge_metadata(&version_override, server_info.loader()).await?;
         lighty_core::trace_debug!("[LightyUpdater] Base loader metadata merged");

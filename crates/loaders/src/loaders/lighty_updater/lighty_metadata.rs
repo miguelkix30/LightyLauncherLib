@@ -51,7 +51,7 @@ impl ServerInfo {
         &self.minecraft_version
     }
 
-    /// Retourne l'URL du serveur
+    /// Returns the server URL.
     pub fn url(&self) -> &str {
         &self.url
     }

@@ -10,6 +10,11 @@ use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use futures::future::join_all;
 use std::collections::HashMap;
 
+/// FabricMC metadata server (returns the `profile/json` manifest).
+const FABRIC_META: &str = "https://meta.fabricmc.net/v2/versions/loader";
+/// Default Maven repository when a library entry omits `url`.
+const FABRIC_MAVEN: &str = "https://maven.fabricmc.net/";
+
 pub type Result<T> = std::result::Result<T, QueryError>;
 
 /// Shared cached repository for Fabric manifests.
@@ -40,8 +45,10 @@ impl Query for FabricQuery {
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<FabricMetaData> {
         let manifest_url = format!(
-            "https://meta.fabricmc.net/v2/versions/loader/{}/{}/profile/json",
-            version.minecraft_version(), version.loader_version()
+            "{}/{}/{}/profile/json",
+            FABRIC_META,
+            version.minecraft_version(),
+            version.loader_version()
         );
         lighty_core::trace_debug!(url = %manifest_url, loader = "fabric", "Fetching manifest");
         let manifest: FabricMetaData = CLIENT.get(manifest_url).send().await?.json().await?;
@@ -153,7 +160,7 @@ async fn extract_libraries(full_data: &FabricMetaData) -> Result<Vec<Library>> {
         let lib_size = lib.size;
 
         async move {
-            let base_url = lib_url.as_deref().unwrap_or("https://maven.fabricmc.net/");
+            let base_url = lib_url.as_deref().unwrap_or(FABRIC_MAVEN);
             let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, base_url);
 
             // Fetch SHA1 / size from Maven only when missing from the manifest

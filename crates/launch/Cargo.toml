@@ -43,6 +43,10 @@ tracing = { workspace = true, optional = true }
 
 # Filesystem & Compression
 async_zip.workspace = true
+# Sync ZIP reads for the install-processor pipeline (reading
+# install_profile.json/version.json out of the installer JAR, extracting
+# /maven/... bundled artifacts).
+zip.workspace = true
 
 # Cryptography
 sha1.workspace = true
