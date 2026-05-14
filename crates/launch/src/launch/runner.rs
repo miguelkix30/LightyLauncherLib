@@ -18,6 +18,8 @@ use crate::arguments::{Arguments, KEY_GAME_DIRECTORY};
 use std::collections::{HashMap,HashSet};
 use lighty_core::hosts::{build_fallback_urls, HTTP_CLIENT as CLIENT};
 use lighty_core::verify_file_sha1;
+use tokio::process::Command;
+use tokio::time::{timeout, Duration};
 
 #[cfg(any(feature = "neoforge", feature = "forge"))]
 use crate::installer::libraries::{collect_library_tasks, download_libraries};
@@ -130,6 +132,8 @@ where
         // For Forge and NeoForge, the install_profile.json libraries are
         // downloaded through the shared library installer (parallel +
         // retry + SHA1) so the processor JARs and the runtime-required
+
+
         // `forge:universal` artifact land on disk. Only the processor
         // execution stays inside each loader crate (it's a per-loader
         // Java exec with different maven URLs / extract subdirs).
@@ -236,16 +240,30 @@ where
         Ok(path) => {
             lighty_core::trace_info!("[Java] Java {} already installed at: {:?}", java_version, path);
 
-            #[cfg(feature = "events")]
-            if let Some(bus) = event_bus {
-                bus.emit(lighty_event::Event::Java(lighty_event::JavaEvent::JavaAlreadyInstalled {
-                    distribution: java_distribution.get_name().to_string(),
-                    version: java_version,
-                    binary_path: path.to_string_lossy().to_string(),
-                }));
+            // Validate the binary; if valid, emit event and return it. If not,
+            // remove the runtime directory and proceed to download a fresh copy.
+            let is_valid = validate_java_binary(&path).await;
+
+            if is_valid {
+                #[cfg(feature = "events")]
+                if let Some(bus) = event_bus {
+                    bus.emit(lighty_event::Event::Java(lighty_event::JavaEvent::JavaAlreadyInstalled {
+                        distribution: java_distribution.get_name().to_string(),
+                        version: java_version,
+                        binary_path: path.to_string_lossy().to_string(),
+                    }));
+                }
+
+                return Ok(path);
             }
 
-            Ok(path)
+            lighty_core::trace_warn!("[Java] Existing Java at {:?} failed validation; removing and re-downloading", path);
+            let runtime_dir = builder.java_dirs().join(format!("{}_{}", java_distribution.get_name(), java_version));
+            if let Err(e) = tokio::fs::remove_dir_all(&runtime_dir).await {
+                lighty_core::trace_error!("[Java] Failed to remove invalid runtime dir {:?}: {}", runtime_dir, e);
+            }
+
+            // Fallthrough to download logic below
         }
         Err(_) => {
             lighty_core::trace_info!("[Java] Java {} not found, downloading...", java_version);
@@ -257,31 +275,54 @@ where
                     version: java_version,
                 }));
             }
-
-            #[cfg(feature = "events")]
-            let path = jre_download(
-                builder.java_dirs(),
-                java_distribution,
-                &java_version,
-                |current, total| {
-                    lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
-                },
-                event_bus,
-            ).await.map_err(|e| InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
-
-            #[cfg(not(feature = "events"))]
-            let path = jre_download(
-                builder.java_dirs(),
-                java_distribution,
-                &java_version,
-                |current, total| {
-                    lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
-                },
-            ).await.map_err(|e : JreError | InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
-
-            lighty_core::trace_info!("[Java] Java {} installed successfully", java_version);
-            Ok(path)
         }
+    }
+
+    // Download JRE (either not found or invalid existing install)
+    #[cfg(feature = "events")]
+    let path = jre_download(
+        builder.java_dirs(),
+        java_distribution,
+        &java_version,
+        |current, total| {
+            lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
+        },
+        event_bus,
+    ).await.map_err(|e| InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
+
+    #[cfg(not(feature = "events"))]
+    let path = jre_download(
+        builder.java_dirs(),
+        java_distribution,
+        &java_version,
+        |current, total| {
+            lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
+        },
+    ).await.map_err(|e : JreError | InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
+
+    lighty_core::trace_info!("[Java] Java {} installed successfully", java_version);
+    Ok(path)
+}
+
+/// Validates a Java binary by running `<bin> -version` with a short timeout.
+async fn validate_java_binary(path: &std::path::Path) -> bool {
+    // Short timeout to avoid blocking the launcher
+    const TIMEOUT_MS: u64 = 3000;
+
+    // Try to execute the binary with `-version` and consider it valid when the
+    // process exits successfully and emits some output (stdout or stderr).
+    let cmd = Command::new(path).arg("-version").output();
+
+    match timeout(Duration::from_millis(TIMEOUT_MS), cmd).await {
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                // Some Java distributions print to stderr for `-version`.
+                let has_output = !output.stdout.is_empty() || !output.stderr.is_empty();
+                return has_output;
+            }
+            false
+        }
+        _ => false,
     }
 }
 

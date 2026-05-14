@@ -389,16 +389,42 @@ async fn extract_archive(archive_bytes: &[u8], destination: &Path) -> JreResult<
 /// - macOS (flat): jre_root/bin/java (Liberica tar.gz)
 /// - Linux: jre_root/bin/java
 async fn locate_binary_in_directory(runtime_dir: &Path) -> JreResult<PathBuf> {
-    // Find the first subdirectory (JRE root)
+    // Iterate entries to find the best candidate JRE root directory.
+    // Prefer directories that contain expected java binaries (bin/java, bin/java.exe,
+    // or Contents/Home/bin/java). As a fallback, use the first directory found.
     let mut entries = fs::read_dir(runtime_dir).await?;
+    let mut first_dir: Option<PathBuf> = None;
+    let mut candidate: Option<PathBuf> = None;
 
-    let jre_root = entries
-        .next_entry()
-        .await?
-        .ok_or_else(|| JreError::NotFound {
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+        if path.is_dir() {
+            // Save first directory as fallback
+            if first_dir.is_none() {
+                first_dir = Some(path.clone());
+            }
+
+            // Heuristics: check common binary locations inside the directory
+            let looks_like_jre = path.join("bin").join("java").exists()
+                || path.join("bin").join("java.exe").exists()
+                || path.join("Contents").join("Home").join("bin").join("java").exists();
+
+            if looks_like_jre {
+                candidate = Some(path);
+                break;
+            }
+        }
+    }
+
+    let jre_root = if let Some(c) = candidate {
+        c
+    } else if let Some(f) = first_dir {
+        f
+    } else {
+        return Err(JreError::NotFound {
             path: runtime_dir.to_path_buf(),
-        })?
-        .path();
+        });
+    };
 
     // Build path to java binary based on OS
     let java_binary = match OS {

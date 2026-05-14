@@ -48,8 +48,25 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Event::Launch(LaunchEvent::InstallProgress { bytes }) => {
                     downloaded += bytes;
-                    let percent = (downloaded as f64 / total as f64) * 100.0;
-                    print!("\rProgress: {:.1}%", percent);
+                    let percent = if total == 0 {
+                        // Unknown total: avoid division by zero, show bytes instead
+                        f64::NAN
+                    } else {
+                        let mut p = (downloaded as f64 / total as f64) * 100.0;
+                        if p.is_nan() {
+                            p = 0.0;
+                        }
+                        if p > 100.0 {
+                            p = 100.0;
+                        }
+                        p
+                    };
+
+                    if percent.is_nan() {
+                        print!("\rProgress: {} / {} bytes", downloaded, total);
+                    } else {
+                        print!("\rProgress: {:.1}%", percent);
+                    }
                     std::io::Write::flush(&mut std::io::stdout()).ok();
                 }
                 Event::Launch(LaunchEvent::InstallCompleted { .. }) => {

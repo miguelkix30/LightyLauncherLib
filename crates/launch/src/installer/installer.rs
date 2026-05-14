@@ -13,6 +13,8 @@
 use super::{libraries, natives, client, assets, mods};
 use lighty_loaders::types::{VersionInfo, version_metadata::Version};
 use lighty_core::{mkdir, time_it};
+use lighty_core::hosts::HTTP_CLIENT;
+use reqwest::header::ACCEPT_ENCODING;
 use crate::errors::InstallerResult;
 
 #[cfg(feature = "events")]
@@ -100,7 +102,7 @@ impl<T: VersionInfo> Installer for T {
             &asset_tasks,
             &mod_tasks,
             &native_download_tasks,
-        );
+        ).await;
 
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
@@ -169,7 +171,7 @@ async fn create_directories(version: &impl VersionInfo) {
 
 /// Calculates the total size of files that need to be downloaded (from tasks)
 #[cfg(feature = "events")]
-fn calculate_download_size(
+async fn calculate_download_size(
     builder: &Version,
     library_tasks: &[(String, std::path::PathBuf)],
     client_task: &Option<(String, std::path::PathBuf)>,
@@ -182,14 +184,33 @@ fn calculate_download_size(
     // Libraries - match tasks with builder.libraries to get size
     for (url, _) in library_tasks {
         if let Some(lib) = builder.libraries.iter().find(|l| l.url.as_ref() == Some(url)) {
-            total += lib.size.unwrap_or(0);
+            let size = lib.size.unwrap_or(0);
+            if size > 0 {
+                total += size;
+            } else {
+                // Try HEAD request to determine size
+                if let Ok(resp) = HTTP_CLIENT.head(url).header(ACCEPT_ENCODING, "identity").send().await {
+                    if let Some(len) = resp.content_length() {
+                        total += len;
+                    }
+                }
+            }
         }
     }
 
     // Client
     if client_task.is_some() {
-        if let Some(client) = &builder.client {
-            total += client.size.unwrap_or(0);
+        if let Some(client_meta) = &builder.client {
+            let size = client_meta.size.unwrap_or(0);
+            if size > 0 {
+                total += size;
+            } else if let Some((url, _)) = client_task {
+                if let Ok(resp) = HTTP_CLIENT.head(url).header(ACCEPT_ENCODING, "identity").send().await {
+                    if let Some(len) = resp.content_length() {
+                        total += len;
+                    }
+                }
+            }
         }
     }
 
@@ -198,6 +219,13 @@ fn calculate_download_size(
         for (url, _) in asset_tasks {
             if let Some(asset) = assets.objects.values().find(|a| a.url.as_ref() == Some(url)) {
                 total += asset.size;
+            } else {
+                // try head
+                if let Ok(resp) = HTTP_CLIENT.head(url).header(ACCEPT_ENCODING, "identity").send().await {
+                    if let Some(len) = resp.content_length() {
+                        total += len;
+                    }
+                }
             }
         }
     }
@@ -206,7 +234,14 @@ fn calculate_download_size(
     if let Some(mods) = &builder.mods {
         for (url, _) in mod_tasks {
             if let Some(_mod) = mods.iter().find(|m| m.url.as_ref() == Some(url)) {
-                total += _mod.size.unwrap_or(0);
+                let size = _mod.size.unwrap_or(0);
+                if size > 0 {
+                    total += size;
+                } else if let Ok(resp) = HTTP_CLIENT.head(url).header(ACCEPT_ENCODING, "identity").send().await {
+                    if let Some(len) = resp.content_length() {
+                        total += len;
+                    }
+                }
             }
         }
     }
@@ -215,7 +250,14 @@ fn calculate_download_size(
     if let Some(natives) = &builder.natives {
         for (url, _) in native_download_tasks {
             if let Some(native) = natives.iter().find(|n| n.url.as_ref() == Some(url)) {
-                total += native.size.unwrap_or(0);
+                let size = native.size.unwrap_or(0);
+                if size > 0 {
+                    total += size;
+                } else if let Ok(resp) = HTTP_CLIENT.head(url).header(ACCEPT_ENCODING, "identity").send().await {
+                    if let Some(len) = resp.content_length() {
+                        total += len;
+                    }
+                }
             }
         }
     }
