@@ -10,3 +10,8 @@ pub mod manifest;
 pub mod error;
 pub mod cache;
 pub mod query;
+pub mod maven;
+#[cfg(any(feature = "neoforge", feature = "forge"))]
+pub mod forge_installer;
+#[cfg(any(feature = "neoforge", feature = "forge"))]
+pub mod forge_processor;

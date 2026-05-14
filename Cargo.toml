@@ -167,7 +167,8 @@ fabric = ["lighty-loaders/fabric"]
 quilt = ["lighty-loaders/quilt"]
 # lighty-launch is enabled so the installer can run NeoForge post-install processors
 neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
-forge = ["lighty-loaders/forge"]
+# lighty-launch is enabled so the installer can run Forge post-install processors
+forge = ["lighty-loaders/forge", "lighty-launch/forge"]
 forge_legacy = ["lighty-loaders/forge_legacy"]
 lighty_updater = ["lighty-loaders/lighty_updater"]
 all-loaders = ["lighty-loaders/all-loaders"]

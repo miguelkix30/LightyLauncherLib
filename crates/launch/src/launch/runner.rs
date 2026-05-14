@@ -17,8 +17,20 @@ use lighty_java::runtime::JavaRuntime;
 use crate::arguments::Arguments;
 use std::collections::{HashMap,HashSet};
 
+#[cfg(any(feature = "neoforge", feature = "forge"))]
+use crate::installer::libraries::{collect_library_tasks, download_libraries};
 #[cfg(feature = "neoforge")]
-use lighty_loaders::neoforge::neoforge::{run_install_processors, NEOFORGE};
+use lighty_loaders::neoforge::neoforge::{
+    extract_install_profile_libraries as neoforge_install_profile_libraries,
+    run_install_processors as neoforge_run_install_processors,
+    NEOFORGE,
+};
+#[cfg(feature = "forge")]
+use lighty_loaders::forge::forge::{
+    extract_install_profile_libraries as forge_install_profile_libraries,
+    run_install_processors as forge_run_install_processors,
+    FORGE,
+};
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
@@ -109,13 +121,43 @@ where
             event_bus,
         ).await?);
 
-        // 3b. Run NeoForge processors (must be after libraries are downloaded)
+        // 3b. Forge-family install_profile libraries + processors.
+        //
+        // For Forge and NeoForge, the install_profile.json libraries are
+        // downloaded through the shared library installer (parallel +
+        // retry + SHA1) so the processor JARs and the runtime-required
+        // `forge:universal` artifact land on disk. Only the processor
+        // execution stays inside each loader crate (it's a per-loader
+        // Java exec with different maven URLs / extract subdirs).
+        //
         // TODO: generalize this into a per-loader post-install hook for any
-        // loader that needs one (currently only NeoForge does).
+        // loader that needs one (currently only Forge / NeoForge do).
         #[cfg(feature = "neoforge")]
         if matches!(version.loader(), Loader::NeoForge) {
             let install_profile = NEOFORGE.get_raw(version).await?;
-            run_install_processors(version, install_profile.as_ref()).await?;
+            let profile_libs = neoforge_install_profile_libraries(install_profile.as_ref());
+            let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+            download_libraries(
+                profile_tasks,
+                #[cfg(feature = "events")]
+                event_bus,
+            )
+            .await?;
+            neoforge_run_install_processors(version, install_profile.as_ref()).await?;
+        }
+
+        #[cfg(feature = "forge")]
+        if matches!(version.loader(), Loader::Forge) {
+            let install_profile = FORGE.get_raw(version).await?;
+            let profile_libs = forge_install_profile_libraries(install_profile.as_ref());
+            let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+            download_libraries(
+                profile_tasks,
+                #[cfg(feature = "events")]
+                event_bus,
+            )
+            .await?;
+            forge_run_install_processors(version, install_profile.as_ref()).await?;
         }
 
         // 4. Launch the game
@@ -301,7 +343,12 @@ where
                 let bus_clone = bus.clone();
                 let instance_name = builder.name().to_string();
                 let version = format!("{}-{}", builder.minecraft_version(), builder.loader_version());
-                tokio::spawn(detect_window_appearance(pid, instance_name, version, bus_clone));
+                tokio::spawn(super::window::detect_window_appearance(
+                    pid,
+                    instance_name,
+                    version,
+                    bus_clone,
+                ));
             }
 
             // Spawn the console-streaming handler. It takes ownership of the
@@ -329,109 +376,4 @@ fn extract_version(metadata: &VersionMetaData) -> InstallerResult<&Version> {
         VersionMetaData::Version(v) => Ok(v),
         _ => Err(InstallerError::InvalidMetadata),
     }
-}
-
-/// Watches for the game window to appear and emits `InstanceWindowAppeared`.
-///
-/// On Windows: polls every 100ms for up to 30s.
-/// On other platforms: emits unconditionally after a 5s delay (heuristic).
-#[cfg(feature = "events")]
-async fn detect_window_appearance(
-    pid: u32,
-    instance_name: String,
-    version: String,
-    event_bus: lighty_event::EventBus,
-) {
-    #[cfg(windows)]
-    {
-        use std::time::Duration;
-
-        // Poll every 100ms for up to 30 seconds
-        let max_attempts = 300;
-        let check_interval = Duration::from_millis(100);
-
-        for _ in 0..max_attempts {
-            if has_visible_window(pid) {
-                lighty_core::trace_info!("[Launch] Window appeared for PID: {}", pid);
-
-                event_bus.emit(lighty_event::Event::InstanceWindowAppeared(
-                    lighty_event::InstanceWindowAppearedEvent {
-                        pid,
-                        instance_name,
-                        version,
-                        timestamp: std::time::SystemTime::now(),
-                    }
-                ));
-                return;
-            }
-
-            tokio::time::sleep(check_interval).await;
-        }
-
-        lighty_core::trace_warn!("[Launch] Window detection timed out for PID: {}", pid);
-    }
-
-    #[cfg(not(windows))]
-    {
-        // Non-Windows platforms: emit unconditionally after a fixed delay (best-effort)
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-        lighty_core::trace_info!("[Launch] Assuming window appeared for PID: {} (non-Windows platform)", pid);
-
-        event_bus.emit(lighty_event::Event::InstanceWindowAppeared(
-            lighty_event::InstanceWindowAppearedEvent {
-                pid,
-                instance_name,
-                version,
-                timestamp: std::time::SystemTime::now(),
-            }
-        ));
-    }
-}
-
-/// Returns `true` if the given PID owns at least one visible top-level window.
-///
-/// Windows-only; uses `EnumWindows` + `IsWindowVisible` + `GetWindowThreadProcessId`.
-#[cfg(all(windows, feature = "events"))]
-fn has_visible_window(pid: u32) -> bool {
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
-    };
-
-    struct EnumData {
-        target_pid: u32,
-        found: bool,
-    }
-
-    unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let data = &mut *(lparam.0 as *mut EnumData);
-
-        // Skip invisible windows
-        if IsWindowVisible(hwnd).as_bool() {
-            let mut window_pid: u32 = 0;
-            GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
-
-            if window_pid == data.target_pid {
-                data.found = true;
-                return BOOL(0); // Stop enumeration
-            }
-        }
-
-        BOOL(1) // Continue enumeration
-    }
-
-    let mut data = EnumData {
-        target_pid: pid,
-        found: false,
-    };
-
-    unsafe {
-        let _ = EnumWindows(
-            Some(enum_window_callback),
-            LPARAM(&mut data as *mut _ as isize),
-        );
-    }
-
-    data.found
 }

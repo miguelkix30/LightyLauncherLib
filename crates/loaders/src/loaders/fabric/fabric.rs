@@ -1,6 +1,7 @@
 use crate::types::version_metadata::{ Library, MainClass, Arguments, Version, VersionMetaData};
 use crate::types::VersionInfo;
 use crate::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
+use crate::utils::maven::{fetch_file_size, fetch_maven_sha1};
 use crate::loaders::vanilla::{vanilla::VanillaQuery};
 use once_cell::sync::Lazy;
 use super::fabric_metadata::FabricMetaData;
@@ -213,35 +214,6 @@ fn maven_artifact_to_path_and_url(maven_name: &str, base_url: &str) -> (String, 
     let full_url = format!("{}/{}", base, path);
 
     (path, full_url)
-}
-
-/// Fetches the SHA1 of a Maven artifact from its sibling `.sha1` file.
-async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
-    let sha1_url = format!("{}.sha1", jar_url);
-
-    match CLIENT.get(&sha1_url).send().await {
-        Ok(response) if response.status().is_success() => {
-            response.text().await.ok().and_then(|text| {
-                let sha1 = text.trim().split_whitespace().next()?.to_string();
-                (sha1.len() == 40).then_some(sha1)
-            })
-        }
-        _ => None,
-    }
-}
-
-/// Fetches a remote file's size without downloading the body (HEAD request).
-async fn fetch_file_size(url: &str) -> Option<u64> {
-    CLIENT.head(url)
-        .send()
-        .await
-        .ok()?
-        .headers()
-        .get("content-length")?
-        .to_str()
-        .ok()?
-        .parse()
-        .ok()
 }
 
 fn extract_arguments(full_data: &FabricMetaData) -> Arguments {

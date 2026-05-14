@@ -1,27 +1,50 @@
-use crate::loaders::forge::forge_metadata::ForgeMetaData;
-use crate::loaders::forge::forge_metadata::ForgeVersionMeta;
-use log::error;
-use zip::ZipArchive;
-use std::fs::File;
-use std::io::{Read, Cursor};
-use std::path::PathBuf;
-use lighty_core::mkdir;
-use lighty_core::download::download_file_untracked;
-use lighty_version::version_metadata::{JavaVersion, Library, MainClass, Arguments, VersionBuilder, VersionMetaData};
-use crate::version::Version;
-use crate::loaders::utils::{error::QueryError, query::Query, manifest::ManifestRepository};
-use crate::loaders::vanilla::{vanilla::VanillaQuery, vanilla_metadata::VanillaMetaData};
-use once_cell::sync::Lazy;
+//! Forge loader (Minecraft 1.13+).
+//!
+//! Installer model is the same as NeoForge (same `install_profile.json` +
+//! `version.json` shape, same processor pipeline). The differences are
+//! routed through configuration:
+//! - Installer URLs live on `maven.minecraftforge.net`
+//! - Processor JARs are fetched from the same Maven base
+//! - Cached extracts are scoped to `net/minecraftforge/` (so they don't
+//!   collide with NeoForge's `net/neoforged/` extracts)
+//!
+//! Legacy Forge (≤ 1.12.2) uses a completely different installer format
+//! and is handled by the separate `forge_legacy` loader.
+
 use async_trait::async_trait;
-use lighty_core::hosts::HTTP_CLIENT as CLIENT;
-use sha1::{Sha1, Digest};
+use once_cell::sync::Lazy;
+use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
+use zip::ZipArchive;
+
+use lighty_core::download::download_file_untracked;
+use lighty_core::mkdir;
+
+use crate::loaders::vanilla::vanilla::VanillaQuery;
+use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
+use crate::types::VersionInfo;
+use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
+use crate::utils::forge_processor::{extract_maven_bundle_to_libraries, run_processors};
+use crate::utils::maven::fetch_maven_sha1;
+use crate::utils::{error::QueryError, manifest::ManifestRepository, query::Query};
+
+/// Maven repository for Forge artifacts.
+const FORGE_MAVEN: &str = "https://maven.minecraftforge.net";
+/// Subdirectory under `libraries/` used to cache files extracted from the
+/// Forge installer JAR.
+const FORGE_EXTRACT_SUBDIR: &str = "net/minecraftforge";
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
-pub static NEOFORGE: Lazy<ManifestRepository<ForgeQuery>> = Lazy::new(|| ManifestRepository::new());
+/// Shared cached repository for Forge manifests.
+pub static FORGE: Lazy<ManifestRepository<ForgeQuery>> =
+    Lazy::new(|| ManifestRepository::new());
 
+/// Sub-queries supported by the Forge loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ForgeQuery {
+    /// Library list from `install_profile.json` (processor-only libraries).
+    Libraries,
+    /// Full merged [`Version`] for a Forge instance.
     ForgeBuilder,
 }
 
@@ -29,53 +52,37 @@ pub enum ForgeQuery {
 impl Query for ForgeQuery {
     type Query = ForgeQuery;
     type Data = VersionMetaData;
-    type Raw = ForgeMetaData;
+    type Raw = ForgeInstallProfile;
 
     fn name() -> &'static str {
-        "neoforge"
+        "forge"
     }
 
-    async fn fetch_full_data(version: &Version) -> Result<ForgeMetaData> {
-        // Build the installer URL
-        let installer_url = if is_old_neoforge(version) {
-            // For old versions (≤ 1.20.1), use the legacy Forge URL format
-            let path_version = format!("{}-{}", version.minecraft_version, version.loader_version);
-            let file_prefix = format!("forge-{}", version.minecraft_version);
-            format!(
-                "https://maven.neoforged.net/releases/net/neoforged/forge/{}/{}-{}-installer.jar",
-                path_version, file_prefix, version.loader_version
-            )
-        } else {
-            // For newer versions (> 1.20.1), use the new NeoForge URL format
-            format!(
-                "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
-                version.loader_version, version.loader_version
-            )
-        };
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<ForgeInstallProfile> {
+        let installer_url = build_installer_url(version);
+        lighty_core::trace_debug!(url = %installer_url, loader = "forge", "Installer URL constructed");
 
-        lighty_core::trace_debug!("[NeoForgeLoader] Installer URL: {}", installer_url);
-
-        // Create the NeoForge profile directory
-        let profiles_dir = version.game_dirs.join(".neoforge");
+        let profiles_dir = version.game_dirs().join(".forge");
         mkdir!(profiles_dir);
 
-        // Local installer path
-        let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version));
+        let installer_path = profiles_dir.join(format!(
+            "forge-{}-installer.jar",
+            version.loader_version()
+        ));
 
         // Verify cached installer and re-download if needed
         let needs_download = if installer_path.exists() {
-            // Verify SHA1 when the file already exists
             match verify_installer_sha1(&installer_path, &installer_url).await {
                 Ok(true) => {
-                    lighty_core::trace_debug!("[NeoForgeLoader] Installer already exists and SHA1 is valid");
+                    lighty_core::trace_info!(loader = "forge", "Installer already exists and SHA1 is valid");
                     false
                 }
                 Ok(false) => {
-                    lighty_core::trace_debug!("[NeoForgeLoader] Installer exists but SHA1 mismatch, re-downloading");
+                    lighty_core::trace_warn!(loader = "forge", "Installer exists but SHA1 mismatch, re-downloading");
                     true
                 }
-                Err(e) => {
-                    lighty_core::trace_debug!("[NeoForgeLoader] Could not verify SHA1 ({}), using existing file", e);
+                Err(_e) => {
+                    lighty_core::trace_warn!(error = %_e, loader = "forge", "Could not verify SHA1, using existing file");
                     false
                 }
             }
@@ -84,130 +91,167 @@ impl Query for ForgeQuery {
         };
 
         if needs_download {
-            lighty_core::trace_debug!("[NeoForgeLoader] Downloading installer to: {:?}", installer_path);
+            lighty_core::trace_info!(path = ?installer_path, loader = "forge", "Downloading installer");
             download_file_untracked(&installer_url, &installer_path)
                 .await
                 .map_err(|e| QueryError::Conversion {
-                    message: format!("Failed to download installer: {}", e)
+                    message: format!("Failed to download installer: {}", e),
                 })?;
 
-            // Verify the SHA1 after downloading
             if let Ok(valid) = verify_installer_sha1(&installer_path, &installer_url).await {
                 if !valid {
                     return Err(QueryError::Conversion {
-                        message: "Downloaded installer has invalid SHA1".to_string()
+                        message: "Downloaded installer has invalid SHA1".to_string(),
                     });
                 }
             }
         }
 
         // Read the embedded JSONs directly from the installer JAR (no disk extraction)
-        let (install_profile, version_meta) = read_jsons_from_jar(&installer_path).await?;
+        let (install_profile, _) = read_jsons_from_jar(&installer_path).await?;
 
-        lighty_core::trace_debug!("[NeoForgeLoader] Successfully loaded NeoForge metadata");
+        lighty_core::trace_info!(loader = "forge", "Successfully loaded Forge metadata");
 
         Ok(install_profile)
     }
 
-    async fn extract(version: &Version, query: &Self::Query, full_data: &ForgeMetaData) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(
+        version: &V,
+        query: &Self::Query,
+        full_data: &ForgeInstallProfile,
+    ) -> Result<Self::Data> {
         let result = match query {
+            ForgeQuery::Libraries => {
+                VersionMetaData::Libraries(extract_install_profile_libraries(full_data))
+            }
             ForgeQuery::ForgeBuilder => {
-                VersionMetaData::VersionBuilder(Self::version_builder(version, full_data).await?)
+                VersionMetaData::Version(Self::version_builder(version, full_data).await?)
             }
         };
         Ok(result)
     }
 
-    async fn version_builder(version: &Version, full_data: &ForgeMetaData) -> Result<VersionBuilder> {
-        // Fetch the Vanilla data
-        let vanilla_data: VanillaMetaData = VanillaQuery::fetch_full_data(version).await?;
-        let vanilla_builder: VersionBuilder = VanillaQuery::version_builder(version, &vanilla_data).await?;
+    async fn version_builder<V: VersionInfo>(
+        version: &V,
+        _full_data: &ForgeInstallProfile,
+    ) -> Result<Version> {
+        // Fetch Vanilla data and read version.json from the installer JAR in parallel
+        let (vanilla_builder, version_meta) = tokio::try_join!(
+            async {
+                let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+                VanillaQuery::version_builder(version, &vanilla_data).await
+            },
+            async {
+                let profiles_dir = version.game_dirs().join(".forge");
+                let installer_path = profiles_dir.join(format!(
+                    "forge-{}-installer.jar",
+                    version.loader_version()
+                ));
+                let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
+                Ok::<_, QueryError>(version_meta)
+            }
+        )?;
 
-        // Read version.json directly from the installer JAR
-        let profiles_dir = version.game_dirs.join(".neoforge");
-        let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version));
-        let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
+        // Use ONLY the runtime libraries from version.json (install_profile
+        // libraries are processor-only and must not end up on the classpath).
+        let version_json_libs = extract_libraries_from_version_meta(&version_meta);
 
-        // Build the NeoForge builder
-        let neoforge_builder = VersionBuilder {
-            main_class: extract_main_class(&version_meta),
-            java_version: JavaVersion { major_version: 8 },
-            arguments: extract_arguments(&version_meta),
-            libraries: extract_libraries(full_data),
-            natives: None,
-            client: None,
-            assets_index: None,
-            assets: None,
-        };
+        // Merge: Vanilla base + version.json overrides
+        let merged_libs = merge_libraries(vanilla_builder.libraries, version_json_libs);
 
-        // Merge the two builders
-        Ok(VersionBuilder {
-            main_class: merge_main_class(vanilla_builder.main_class, neoforge_builder.main_class),
-            java_version: neoforge_builder.java_version,
-            arguments: merge_arguments(vanilla_builder.arguments, neoforge_builder.arguments),
-            libraries: merge_libraries(vanilla_builder.libraries, neoforge_builder.libraries),
-            natives: vanilla_builder.natives.or(neoforge_builder.natives),
-            client: vanilla_builder.client.or(neoforge_builder.client),
-            assets_index: vanilla_builder.assets_index.or(neoforge_builder.assets_index),
-            assets: vanilla_builder.assets.or(neoforge_builder.assets),
+        Ok(Version {
+            main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(&version_meta)),
+            java_version: vanilla_builder.java_version,
+            arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(&version_meta)),
+            libraries: merged_libs,
+            mods: None,
+            natives: vanilla_builder.natives,
+            client: vanilla_builder.client,
+            assets_index: vanilla_builder.assets_index,
+            assets: vanilla_builder.assets,
         })
     }
 }
 
 /// --------- Merge helpers ----------
-
-fn merge_main_class(vanilla: MainClass, neoforge: MainClass) -> MainClass {
-    if neoforge.main_class.is_empty() {
+fn merge_main_class(vanilla: MainClass, forge: MainClass) -> MainClass {
+    if forge.main_class.is_empty() {
         vanilla
     } else {
-        neoforge
+        forge
     }
 }
 
-fn merge_arguments(vanilla: Arguments, neoforge: Arguments) -> Arguments {
+fn merge_arguments(vanilla: Arguments, forge: Arguments) -> Arguments {
     Arguments {
         game: {
             let mut args = vanilla.game;
-            args.extend(neoforge.game);
+            args.extend(forge.game);
             args
         },
-        jvm: match (vanilla.jvm, neoforge.jvm) {
-            (Some(mut v), Some(n)) => {
-                v.extend(n);
+        jvm: match (vanilla.jvm, forge.jvm) {
+            (Some(mut v), Some(f)) => {
+                v.extend(f);
                 Some(v)
             }
             (Some(v), None) => Some(v),
-            (None, Some(n)) => Some(n),
+            (None, Some(f)) => Some(f),
             (None, None) => None,
         },
     }
 }
 
-fn merge_libraries(mut vanilla_libs: Vec<Library>, neoforge_libs: Vec<Library>) -> Vec<Library> {
-    for lib in neoforge_libs {
-        if !vanilla_libs.iter().any(|v| v.name == lib.name) {
-            vanilla_libs.push(lib);
-        }
+/// Merges library lists, de-duplicating by `group:artifact` (version-agnostic).
+fn merge_libraries(vanilla_libs: Vec<Library>, forge_libs: Vec<Library>) -> Vec<Library> {
+    let capacity = vanilla_libs.len() + forge_libs.len();
+    let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
+
+    // Insert Vanilla first
+    for lib in vanilla_libs {
+        let key = extract_artifact_key(&lib.name);
+        lib_map.insert(key, lib);
     }
-    vanilla_libs
+
+    // Forge overrides Vanilla on key collision (typically a newer version)
+    for lib in forge_libs {
+        let key = extract_artifact_key(&lib.name);
+        lib_map.insert(key, lib);
+    }
+
+    lib_map.into_values().collect()
+}
+
+/// Extracts the `group:artifact` (version-agnostic) key used for dedup.
+fn extract_artifact_key(maven_name: &str) -> String {
+    let mut parts = maven_name.split(':');
+    match (parts.next(), parts.next()) {
+        (Some(group), Some(artifact)) => format!("{}:{}", group, artifact),
+        _ => maven_name.to_string(),
+    }
 }
 
 /// --------- Extraction helpers ----------
-
-fn extract_main_class(version_meta: &ForgeVersionMeta) -> MainClass {
+fn extract_main_class(version_meta: &ForgeVersionManifest) -> MainClass {
     MainClass {
         main_class: version_meta.main_class.clone(),
     }
 }
 
-fn extract_arguments(version_meta: &ForgeVersionMeta) -> Arguments {
+fn extract_arguments(version_meta: &ForgeVersionManifest) -> Arguments {
     Arguments {
         game: version_meta.arguments.game.clone(),
         jvm: Some(version_meta.arguments.jvm.clone()),
     }
 }
 
-fn extract_libraries(full_data: &ForgeMetaData) -> Vec<Library> {
+/// Returns the install_profile.json libraries as the launcher's pivot
+/// [`Library`] type so they can be fed through the generic library
+/// installer.
+///
+/// Includes both the processor JARs and the runtime-required artifacts
+/// (notably `net.minecraftforge:forge:VERSION:universal`, which is
+/// referenced at runtime by FML but absent from `version.json`).
+pub fn extract_install_profile_libraries(full_data: &ForgeInstallProfile) -> Vec<Library> {
     full_data
         .libraries
         .iter()
@@ -221,25 +265,54 @@ fn extract_libraries(full_data: &ForgeMetaData) -> Vec<Library> {
         .collect()
 }
 
-/// --------- Helpers ----------
+fn extract_libraries_from_version_meta(version_meta: &ForgeVersionManifest) -> Vec<Library> {
+    version_meta
+        .libraries
+        .iter()
+        .map(|lib| Library {
+            name: lib.name.clone(),
+            url: Some(lib.downloads.artifact.url.clone()),
+            path: Some(lib.downloads.artifact.path.clone()),
+            sha1: Some(lib.downloads.artifact.sha1.clone()),
+            size: Some(lib.downloads.artifact.size),
+        })
+        .collect()
+}
 
-fn is_old_neoforge(version: &Version) -> bool {
-    version_compare::compare_to(&version.minecraft_version, "1.20.1", version_compare::Cmp::Le)
-        .unwrap_or(false)
+/// --------- Helpers ----------
+fn build_installer_url<V: VersionInfo>(version: &V) -> String {
+    format!(
+        "{}/net/minecraftforge/forge/{}-{}/forge-{}-{}-installer.jar",
+        FORGE_MAVEN,
+        version.minecraft_version(),
+        version.loader_version(),
+        version.minecraft_version(),
+        version.loader_version(),
+    )
+}
+
+fn processors_marker_path<V: VersionInfo>(version: &V) -> PathBuf {
+    version.game_dirs().join(".forge").join(format!(
+        "processors-{}-{}.sha1",
+        version.minecraft_version(),
+        version.loader_version()
+    ))
 }
 
 /// Reads `install_profile.json` and `version.json` directly from the
 /// installer JAR without extracting anything to disk.
-async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeMetaData, ForgeVersionMeta)> {
+async fn read_jsons_from_jar(
+    installer_path: &PathBuf,
+) -> Result<(ForgeInstallProfile, ForgeVersionManifest)> {
     let path = installer_path.clone();
 
     tokio::task::spawn_blocking(move || {
         let file = File::open(&path).map_err(|e| QueryError::Conversion {
-            message: format!("Failed to open installer JAR: {}", e)
+            message: format!("Failed to open installer JAR: {}", e),
         })?;
 
         let mut archive = ZipArchive::new(file).map_err(|e| QueryError::Conversion {
-            message: format!("Failed to open ZIP archive: {}", e)
+            message: format!("Failed to open ZIP archive: {}", e),
         })?;
 
         // Read install_profile.json
@@ -251,87 +324,119 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeMetaData,
             })?;
 
             let mut contents = String::new();
-            file.read_to_string(&mut contents).map_err(|e| QueryError::Conversion {
-                message: format!("Failed to read install_profile.json: {}", e)
-            })?;
+            file.read_to_string(&mut contents)
+                .map_err(|e| QueryError::Conversion {
+                    message: format!("Failed to read install_profile.json: {}", e),
+                })?;
 
-            serde_json::from_str::<ForgeMetaData>(&contents)?
+            serde_json::from_str::<ForgeInstallProfile>(&contents)?
         };
 
         // Read version.json
         let version_meta = {
-            let mut file = archive.by_name("version.json").map_err(|_| {
-                QueryError::MissingField {
+            let mut file = archive
+                .by_name("version.json")
+                .map_err(|_| QueryError::MissingField {
                     field: "version.json in installer JAR".to_string(),
-                }
-            })?;
+                })?;
 
             let mut contents = String::new();
-            file.read_to_string(&mut contents).map_err(|e| QueryError::Conversion {
-                message: format!("Failed to read version.json: {}", e)
-            })?;
+            file.read_to_string(&mut contents)
+                .map_err(|e| QueryError::Conversion {
+                    message: format!("Failed to read version.json: {}", e),
+                })?;
 
-            serde_json::from_str::<ForgeVersionMeta>(&contents)?
+            serde_json::from_str::<ForgeVersionManifest>(&contents)?
         };
 
         Ok((install_profile, version_meta))
     })
     .await
     .map_err(|e| QueryError::Conversion {
-        message: format!("Failed to spawn blocking task: {}", e)
+        message: format!("Failed to spawn blocking task: {}", e),
     })?
 }
 
-/// Fetches the expected SHA1 of a Maven artifact from its `.sha1` sibling.
-async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
-    let sha1_url = format!("{}.sha1", jar_url);
-
-    match CLIENT.get(&sha1_url).send().await {
-        Ok(response) if response.status().is_success() => {
-            response.text().await.ok().and_then(|text| {
-                let sha1 = text.trim().split_whitespace().next()?.to_string();
-                (sha1.len() == 40).then_some(sha1)
-            })
-        }
-        _ => None,
-    }
-}
-
-/// Computes the SHA1 hex digest of a file via blocking I/O.
-fn calculate_file_sha1(path: &PathBuf) -> Result<String> {
-    let mut file = File::open(path).map_err(|e| QueryError::Conversion {
-        message: format!("Failed to open file for SHA1 calculation: {}", e)
-    })?;
-
-    let mut hasher = Sha1::new();
-    let mut buffer = [0u8; 8192];
-
-    loop {
-        let n = file.read(&mut buffer).map_err(|e| QueryError::Conversion {
-            message: format!("Failed to read file for SHA1 calculation: {}", e)
-        })?;
-
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
-    }
-
-    Ok(hex::encode(hasher.finalize()))
-}
-
-
 /// Verifies the local installer JAR matches the expected SHA1 from Maven.
 async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) -> Result<bool> {
-    // Fetch the expected SHA1
     let expected_sha1 = fetch_maven_sha1(installer_url)
         .await
         .ok_or_else(|| QueryError::Conversion {
-            message: "Failed to fetch SHA1 from Maven".to_string()
+            message: "Failed to fetch SHA1 from Maven".to_string(),
         })?;
 
-    // Compute the SHA1 of the local file
-    let actual_sha1 = calculate_file_sha1(installer_path)?;
+    lighty_core::verify_file_sha1_sync(installer_path, &expected_sha1).map_err(|e| {
+        QueryError::Conversion {
+            message: format!("Failed to verify SHA1: {}", e),
+        }
+    })
+}
 
-    Ok(expected_sha1.eq_ignore_ascii_case(&actual_sha1))
+/// Runs the Forge install processors.
+///
+/// The caller must have already downloaded the install_profile libraries
+/// (via the generic library installer pipeline) so the processor JARs
+/// and their classpath dependencies are on disk before this is invoked.
+pub async fn run_install_processors<V: VersionInfo>(
+    version: &V,
+    install_profile: &ForgeInstallProfile,
+) -> Result<()> {
+    lighty_core::trace_info!(loader = "forge", "Checking if processors need to run");
+
+    let profiles_dir = version.game_dirs().join(".forge");
+    mkdir!(profiles_dir);
+    let installer_path = profiles_dir.join(format!(
+        "forge-{}-installer.jar",
+        version.loader_version(),
+    ));
+
+    if !installer_path.exists() {
+        return Err(QueryError::Conversion {
+            message: "Installer JAR not found. Run fetch_full_data first.".to_string(),
+        });
+    }
+
+    // Extract artifacts bundled inside the installer JAR (Forge ships
+    // forge-shim.jar in 1.21+, forge.jar + forge-universal.jar in 1.14,
+    // etc. at `/maven/...`). Idempotent.
+    let libraries_dir = version.game_dirs().join("libraries");
+    extract_maven_bundle_to_libraries(&installer_path, &libraries_dir)?;
+
+    let installer_url = build_installer_url(version);
+    let marker_path = processors_marker_path(version);
+    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
+        if let Ok(existing) = std::fs::read_to_string(&marker_path) {
+            if existing.trim() == expected_sha1 {
+                lighty_core::trace_info!(
+                    loader = "forge",
+                    "Processors already executed for this installer, skipping"
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    // Run the processors using the shared executor with Forge's
+    // maven URL and extract subdirectory.
+    run_processors(
+        version,
+        install_profile,
+        installer_path,
+        FORGE_MAVEN,
+        FORGE_EXTRACT_SUBDIR,
+    )
+    .await?;
+
+    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
+        if let Err(_err) = std::fs::write(&marker_path, expected_sha1) {
+            lighty_core::trace_warn!(
+                error = %_err,
+                loader = "forge",
+                "Failed to write processors marker file"
+            );
+        }
+    }
+
+    lighty_core::trace_info!(loader = "forge", "Processors completed successfully");
+    Ok(())
 }

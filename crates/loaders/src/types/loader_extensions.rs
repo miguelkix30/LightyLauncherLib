@@ -5,6 +5,8 @@ use crate::utils::error::QueryError;
 use crate::loaders::lighty_updater::lighty_updater::{LIGHTY_UPDATER, LightyQuery};
 #[cfg(feature = "neoforge")]
 use crate::loaders::neoforge::neoforge::{NeoForgeQuery, NEOFORGE};
+#[cfg(feature = "forge")]
+use crate::loaders::forge::forge::{ForgeQuery, FORGE};
 #[cfg(feature = "quilt")]
 use crate::loaders::quilt::quilt::{QuiltQuery, QUILT};
 #[cfg(feature = "fabric")]
@@ -92,10 +94,7 @@ where
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                // TODO: Implement Forge support
-                Err(QueryError::UnsupportedLoader(
-                    "Forge loader is not yet implemented".to_string()
-                ))
+                FORGE.get(self, ForgeQuery::ForgeBuilder).await
             }
 
             #[cfg(feature = "lighty_updater")]
@@ -138,10 +137,8 @@ where
 
             #[cfg(feature = "forge")]
             Loader::Forge => {
-                // TODO: Implement Forge support
-                Err(QueryError::UnsupportedLoader(
-                    "Forge loader is not yet implemented".to_string()
-                ))
+                // Forge has no separate libraries query — use full builder
+                FORGE.get(self, ForgeQuery::ForgeBuilder).await
             }
 
             _ => {

@@ -148,7 +148,7 @@ pub struct RuleOS {
 #[derive(Default)]
 pub struct Arguments {
     #[serde(default)]
-    pub game: Vec<serde_json::Value>, // peut être String ou Object
+    pub game: Vec<serde_json::Value>, // may be String or Object
     #[serde(default)]
     pub jvm: Vec<serde_json::Value>,
 }

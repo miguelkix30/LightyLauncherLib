@@ -69,3 +69,5 @@ default = []
 events = ["lighty-event", "lighty-java/events", "lighty-core/events"]
 # Required so the installer can run NeoForge post-install processors
 neoforge = ["lighty-loaders/neoforge"]
+# Required so the installer can run Forge post-install processors
+forge = ["lighty-loaders/forge"]

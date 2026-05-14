@@ -3,16 +3,23 @@ use once_cell::sync::Lazy;
 use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
 use zip::ZipArchive;
 
-use super::neoforge_metadata::{NeoForgeMetaData, NeoForgeVersionMeta};
-use super::patcher;
+use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
+use crate::utils::forge_processor::run_processors;
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
+use crate::utils::maven::fetch_maven_sha1;
 use crate::utils::{error::QueryError, manifest::ManifestRepository, query::Query};
+
+/// Maven repository for NeoForge artifacts. Passed to the shared
+/// install-processor executor so it knows where to pull processor JARs.
+const NEOFORGE_MAVEN: &str = "https://maven.neoforged.net/releases";
+/// Subdirectory under `libraries/` used to cache files extracted from the
+/// NeoForge installer JAR (keeps Forge / NeoForge extracts isolated).
+const NEOFORGE_EXTRACT_SUBDIR: &str = "net/neoforged";
 
 use crate::loaders::vanilla::vanilla::VanillaQuery;
 
 use lighty_core::download::download_file_untracked;
-use lighty_core::hosts::HTTP_CLIENT;
 
 use lighty_core::mkdir;
 pub type Result<T> = std::result::Result<T, QueryError>;
@@ -37,13 +44,13 @@ pub enum NeoForgeQuery {
 impl Query for NeoForgeQuery {
     type Query = NeoForgeQuery;
     type Data = VersionMetaData;
-    type Raw = NeoForgeMetaData ;
+    type Raw = ForgeInstallProfile ;
 
     fn name() -> &'static str {
         "neoforge"
     }
 
-    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<NeoForgeMetaData> {
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<ForgeInstallProfile> {
         // Build the installer URL
         let installer_url = build_installer_url(version);
 
@@ -99,9 +106,9 @@ impl Query for NeoForgeQuery {
         Ok(install_profile)
     }
 
-    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &NeoForgeMetaData) -> Result<Self::Data> {
+    async fn extract<V: VersionInfo>(version: &V, query: &Self::Query, full_data: &ForgeInstallProfile) -> Result<Self::Data> {
         let result = match query {
-            NeoForgeQuery::Libraries => VersionMetaData::Libraries(extract_libraries(full_data)),
+            NeoForgeQuery::Libraries => VersionMetaData::Libraries(extract_install_profile_libraries(full_data)),
             &NeoForgeQuery::Arguments | &NeoForgeQuery::MainClass => todo!(),
             NeoForgeQuery::NeoForgeBuilder => {
                 VersionMetaData::Version(Self::version_builder(version, full_data).await?)
@@ -110,7 +117,7 @@ impl Query for NeoForgeQuery {
         Ok(result)
     }
 
-    async fn version_builder<V: VersionInfo>(version: &V, _full_data: &NeoForgeMetaData) -> Result<Version> {
+    async fn version_builder<V: VersionInfo>(version: &V, _full_data: &ForgeInstallProfile) -> Result<Version> {
         // Fetch Vanilla data and read version.json from the installer JAR in parallel
         let (vanilla_builder, version_meta) = tokio::try_join!(
             async {
@@ -206,20 +213,27 @@ fn extract_artifact_key(maven_name: &str) -> String {
 }
 
 /// --------- Extraction helpers ----------
-fn extract_main_class(version_meta: &NeoForgeVersionMeta) -> MainClass {
+fn extract_main_class(version_meta: &ForgeVersionManifest) -> MainClass {
     MainClass {
         main_class: version_meta.main_class.clone(),
     }
 }
 
-fn extract_arguments(version_meta: &NeoForgeVersionMeta) -> Arguments {
+fn extract_arguments(version_meta: &ForgeVersionManifest) -> Arguments {
     Arguments {
         game: version_meta.arguments.game.clone(),
         jvm: Some(version_meta.arguments.jvm.clone()),
     }
 }
 
-fn extract_libraries(full_data: &NeoForgeMetaData) -> Vec<Library> {
+/// Returns the install_profile.json libraries as the launcher's pivot
+/// [`Library`] type so they can be fed through the generic library
+/// installer (parallel download, retry, SHA1 verify).
+///
+/// Includes both the processor JARs and the runtime-required artifacts
+/// (notably `net.neoforged:forge:VERSION:universal`, which is referenced
+/// at runtime by FML but absent from `version.json`).
+pub fn extract_install_profile_libraries(full_data: &ForgeInstallProfile) -> Vec<Library> {
     full_data
         .libraries
         .iter()
@@ -233,7 +247,7 @@ fn extract_libraries(full_data: &NeoForgeMetaData) -> Vec<Library> {
         .collect()
 }
 
-fn extract_libraries_from_version_meta(version_meta: &NeoForgeVersionMeta) -> Vec<Library> {
+fn extract_libraries_from_version_meta(version_meta: &ForgeVersionManifest) -> Vec<Library> {
     version_meta
         .libraries
         .iter()
@@ -282,7 +296,7 @@ fn processors_marker_path<V: VersionInfo>(version: &V) -> PathBuf {
 
 /// Reads `install_profile.json` and `version.json` directly from the
 /// installer JAR without extracting anything to disk.
-async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaData, NeoForgeVersionMeta)> {
+async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeInstallProfile, ForgeVersionManifest)> {
     let path = installer_path.clone();
 
     tokio::task::spawn_blocking(move || {
@@ -307,7 +321,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
                 message: format!("Failed to read install_profile.json: {}", e)
             })?;
 
-            serde_json::from_str::<NeoForgeMetaData>(&contents)?
+            serde_json::from_str::<ForgeInstallProfile>(&contents)?
         };
 
         // Read version.json
@@ -323,7 +337,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
                 message: format!("Failed to read version.json: {}", e)
             })?;
 
-            serde_json::from_str::<NeoForgeVersionMeta>(&contents)?
+            serde_json::from_str::<ForgeVersionManifest>(&contents)?
         };
 
         Ok((install_profile, version_meta))
@@ -332,21 +346,6 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
     .map_err(|e| QueryError::Conversion {
         message: format!("Failed to spawn blocking task: {}", e)
     })?
-}
-
-/// Fetches the expected SHA1 of a Maven artifact from its `.sha1` sibling.
-async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
-    let sha1_url = format!("{}.sha1", jar_url);
-
-    match HTTP_CLIENT.get(&sha1_url).send().await {
-        Ok(response) if response.status().is_success() => {
-            response.text().await.ok().and_then(|text| {
-                let sha1 = text.trim().split_whitespace().next()?.to_string();
-                (sha1.len() == 40).then_some(sha1)
-            })
-        }
-        _ => None,
-    }
 }
 
 /// Verifies the local installer JAR matches the expected SHA1 from Maven.
@@ -365,11 +364,12 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
 
 /// Runs the NeoForge install processors.
 ///
-/// Must be called after all libraries (including the runtime classpath
-/// and the processor-only dependencies) have been downloaded.
+/// The caller must have already downloaded the install_profile libraries
+/// (via the generic library installer pipeline) so the processor JARs
+/// and their classpath dependencies are on disk before this is invoked.
 pub async fn run_install_processors<V: VersionInfo>(
     version: &V,
-    install_profile: &NeoForgeMetaData,
+    install_profile: &ForgeInstallProfile,
 ) -> Result<()> {
     lighty_core::trace_info!(loader = "neoforge", "Checking if processors need to run");
 
@@ -400,8 +400,16 @@ pub async fn run_install_processors<V: VersionInfo>(
         }
     }
 
-    // Run the processors
-    patcher::run_processors(version, install_profile, installer_path).await?;
+    // Run the processors using the shared executor with NeoForge's
+    // maven URL and extract subdirectory.
+    run_processors(
+        version,
+        install_profile,
+        installer_path,
+        NEOFORGE_MAVEN,
+        NEOFORGE_EXTRACT_SUBDIR,
+    )
+    .await?;
     
     if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
         if let Err(_err) = std::fs::write(&marker_path, expected_sha1) {
