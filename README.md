@@ -24,7 +24,7 @@ A modern, modular Minecraft launcher library for Rust with full async support, r
 
 ```toml
 [dependencies]
-lighty-launcher = "0.8.6"
+lighty-launcher = "26.5.1"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -177,16 +177,16 @@ See [docs/examples.md](docs/examples.md) for detailed example documentation.
 
 ```toml
 # Minimal - Vanilla only
-lighty-launcher = { version = "0.8.6", features = ["vanilla"] }
+lighty-launcher = { version = "26.5.1", features = ["vanilla"] }
 
 # With events
-lighty-launcher = { version = "0.8.6", features = ["vanilla", "events"] }
+lighty-launcher = { version = "26.5.1", features = ["vanilla", "events"] }
 
 # Multiple loaders
-lighty-launcher = { version = "0.8.6", features = ["vanilla", "fabric", "quilt", "events"] }
+lighty-launcher = { version = "26.5.1", features = ["vanilla", "fabric", "quilt", "events"] }
 
 # All loaders
-lighty-launcher = { version = "0.8.6", features = ["all-loaders", "events"] }
+lighty-launcher = { version = "26.5.1", features = ["all-loaders", "events"] }
 ```
 
 **Available Features:**

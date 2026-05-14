@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Errors returned by every loader query operation.
 #[derive(Error, Debug)]
 pub enum QueryError {
     #[error("Network error: {0}")]

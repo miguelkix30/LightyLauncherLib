@@ -1,3 +1,10 @@
+//! Serde mirrors of the `install_profile.json` and `version.json` files
+//! embedded in every NeoForge installer JAR.
+//!
+//! [`NeoForgeMetaData`] is `install_profile.json` (processors and
+//! processor-only libraries); [`NeoForgeVersionMeta`] is `version.json`
+//! (runtime libraries, main class, arguments).
+
 use serde::Deserialize;
 use std::collections::HashMap;
 

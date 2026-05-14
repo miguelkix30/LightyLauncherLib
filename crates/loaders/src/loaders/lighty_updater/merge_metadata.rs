@@ -4,8 +4,10 @@ use crate::utils::error::QueryError;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
-/// Merge les métadonnées de Lighty Updater avec un autre loader
-/// selon le loader spécifié dans ServerInfo
+/// Fetches and merges the base loader's metadata into a [`Version`].
+///
+/// The base loader is selected from the `loader` string supplied by
+/// `ServerInfo` (`"vanilla"`, `"fabric"`, `"quilt"`, `"neoforge"`).
 pub async fn merge_metadata<V: VersionInfo>(version: &V, loader: &str) -> Result<Version> {
     lighty_core::trace_debug!("[merge_metadata] START with loader={}", loader);
 

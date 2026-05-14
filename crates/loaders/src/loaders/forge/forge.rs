@@ -36,9 +36,9 @@ impl Query for ForgeQuery {
     }
 
     async fn fetch_full_data(version: &Version) -> Result<ForgeMetaData> {
-        // Construire l'URL de l'installer
+        // Build the installer URL
         let installer_url = if is_old_neoforge(version) {
-            // Pour les versions anciennes (≤ 1.20.1), utiliser l'ancien format Forge
+            // For old versions (≤ 1.20.1), use the legacy Forge URL format
             let path_version = format!("{}-{}", version.minecraft_version, version.loader_version);
             let file_prefix = format!("forge-{}", version.minecraft_version);
             format!(
@@ -46,7 +46,7 @@ impl Query for ForgeQuery {
                 path_version, file_prefix, version.loader_version
             )
         } else {
-            // Pour les nouvelles versions (> 1.20.1), utiliser le nouveau format NeoForge
+            // For newer versions (> 1.20.1), use the new NeoForge URL format
             format!(
                 "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
                 version.loader_version, version.loader_version
@@ -55,16 +55,16 @@ impl Query for ForgeQuery {
 
         lighty_core::trace_debug!("[NeoForgeLoader] Installer URL: {}", installer_url);
 
-        // Créer le répertoire de profil NeoForge
+        // Create the NeoForge profile directory
         let profiles_dir = version.game_dirs.join(".neoforge");
         mkdir!(profiles_dir);
 
-        // Chemin de l'installer local
+        // Local installer path
         let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version));
 
-        // Vérifier et télécharger l'installer si nécessaire
+        // Verify cached installer and re-download if needed
         let needs_download = if installer_path.exists() {
-            // Vérifier le SHA1 si le fichier existe
+            // Verify SHA1 when the file already exists
             match verify_installer_sha1(&installer_path, &installer_url).await {
                 Ok(true) => {
                     lighty_core::trace_debug!("[NeoForgeLoader] Installer already exists and SHA1 is valid");
@@ -91,7 +91,7 @@ impl Query for ForgeQuery {
                     message: format!("Failed to download installer: {}", e)
                 })?;
 
-            // Vérifier le SHA1 après téléchargement
+            // Verify the SHA1 after downloading
             if let Ok(valid) = verify_installer_sha1(&installer_path, &installer_url).await {
                 if !valid {
                     return Err(QueryError::Conversion {
@@ -101,7 +101,7 @@ impl Query for ForgeQuery {
             }
         }
 
-        // Lire les JSONs directement depuis le JAR sans extraction
+        // Read the embedded JSONs directly from the installer JAR (no disk extraction)
         let (install_profile, version_meta) = read_jsons_from_jar(&installer_path).await?;
 
         lighty_core::trace_debug!("[NeoForgeLoader] Successfully loaded NeoForge metadata");
@@ -119,16 +119,16 @@ impl Query for ForgeQuery {
     }
 
     async fn version_builder(version: &Version, full_data: &ForgeMetaData) -> Result<VersionBuilder> {
-        // Récupérer les données Vanilla
+        // Fetch the Vanilla data
         let vanilla_data: VanillaMetaData = VanillaQuery::fetch_full_data(version).await?;
         let vanilla_builder: VersionBuilder = VanillaQuery::version_builder(version, &vanilla_data).await?;
 
-        // Lire version.json directement depuis le JAR
+        // Read version.json directly from the installer JAR
         let profiles_dir = version.game_dirs.join(".neoforge");
         let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version));
         let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
 
-        // Construire le builder NeoForge
+        // Build the NeoForge builder
         let neoforge_builder = VersionBuilder {
             main_class: extract_main_class(&version_meta),
             java_version: JavaVersion { major_version: 8 },
@@ -140,7 +140,7 @@ impl Query for ForgeQuery {
             assets: None,
         };
 
-        // Merger les deux builders
+        // Merge the two builders
         Ok(VersionBuilder {
             main_class: merge_main_class(vanilla_builder.main_class, neoforge_builder.main_class),
             java_version: neoforge_builder.java_version,
@@ -154,7 +154,7 @@ impl Query for ForgeQuery {
     }
 }
 
-/// --------- Fonctions de merge ----------
+/// --------- Merge helpers ----------
 
 fn merge_main_class(vanilla: MainClass, neoforge: MainClass) -> MainClass {
     if neoforge.main_class.is_empty() {
@@ -192,7 +192,7 @@ fn merge_libraries(mut vanilla_libs: Vec<Library>, neoforge_libs: Vec<Library>) 
     vanilla_libs
 }
 
-/// --------- Fonctions d'extraction ----------
+/// --------- Extraction helpers ----------
 
 fn extract_main_class(version_meta: &ForgeVersionMeta) -> MainClass {
     MainClass {
@@ -228,7 +228,8 @@ fn is_old_neoforge(version: &Version) -> bool {
         .unwrap_or(false)
 }
 
-/// Lit les JSONs directement depuis le JAR sans extraction sur disque
+/// Reads `install_profile.json` and `version.json` directly from the
+/// installer JAR without extracting anything to disk.
 async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeMetaData, ForgeVersionMeta)> {
     let path = installer_path.clone();
 
@@ -241,7 +242,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeMetaData,
             message: format!("Failed to open ZIP archive: {}", e)
         })?;
 
-        // Lire install_profile.json
+        // Read install_profile.json
         let install_profile = {
             let mut file = archive.by_name("install_profile.json").map_err(|_| {
                 QueryError::MissingField {
@@ -257,7 +258,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeMetaData,
             serde_json::from_str::<ForgeMetaData>(&contents)?
         };
 
-        // Lire version.json
+        // Read version.json
         let version_meta = {
             let mut file = archive.by_name("version.json").map_err(|_| {
                 QueryError::MissingField {
@@ -281,7 +282,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(ForgeMetaData,
     })?
 }
 
-/// Récupère le SHA1 attendu depuis Maven
+/// Fetches the expected SHA1 of a Maven artifact from its `.sha1` sibling.
 async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     let sha1_url = format!("{}.sha1", jar_url);
 
@@ -296,7 +297,7 @@ async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     }
 }
 
-/// Calcule le SHA1 d'un fichier
+/// Computes the SHA1 hex digest of a file via blocking I/O.
 fn calculate_file_sha1(path: &PathBuf) -> Result<String> {
     let mut file = File::open(path).map_err(|e| QueryError::Conversion {
         message: format!("Failed to open file for SHA1 calculation: {}", e)
@@ -320,16 +321,16 @@ fn calculate_file_sha1(path: &PathBuf) -> Result<String> {
 }
 
 
-/// Vérifie le SHA1 de l'installer
+/// Verifies the local installer JAR matches the expected SHA1 from Maven.
 async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) -> Result<bool> {
-    // Récupérer le SHA1 attendu
+    // Fetch the expected SHA1
     let expected_sha1 = fetch_maven_sha1(installer_url)
         .await
         .ok_or_else(|| QueryError::Conversion {
             message: "Failed to fetch SHA1 from Maven".to_string()
         })?;
 
-    // Calculer le SHA1 du fichier local
+    // Compute the SHA1 of the local file
     let actual_sha1 = calculate_file_sha1(installer_path)?;
 
     Ok(expected_sha1.eq_ignore_ascii_case(&actual_sha1))

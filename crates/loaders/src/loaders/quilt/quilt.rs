@@ -15,15 +15,21 @@ use crate::types::version_metadata::
 {Library, VersionMetaData, Arguments, MainClass, Version};
 
 
+/// Shared cached repository for Quilt manifests.
 pub static QUILT: Lazy<ManifestRepository<QuiltQuery>> = Lazy::new(|| ManifestRepository::new());
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
+/// Sub-queries supported by the Quilt loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum QuiltQuery {
+    /// Main class to launch.
     MainClass,
+    /// Merged library list (Quilt + Vanilla).
     Libraries,
+    /// Merged JVM/game argument list.
     Arguments,
+    /// Full merged [`Version`] for a Quilt instance.
     QuiltBuilder,
 }
 
@@ -59,7 +65,7 @@ impl Query for QuiltQuery {
     }
 
     async fn version_builder<V: VersionInfo>(version: &V, full_data: &QuiltMetaData) -> Result<Version> {
-        // Paralléliser la récupération des données Vanilla et Quilt
+        // Fetch Vanilla and Quilt data in parallel
         let (vanilla_builder, quilt_libraries) = tokio::try_join!(
         async {
             let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
@@ -68,7 +74,7 @@ impl Query for QuiltQuery {
         extract_libraries(full_data)
     )?;
 
-        // Merger directement avec Vanilla en priorité
+        // Merge with Vanilla as the base, Quilt overriding where it provides a value
         Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(full_data)),
             java_version: vanilla_builder.java_version,
@@ -110,18 +116,18 @@ fn merge_arguments(vanilla: Arguments, quilt: Arguments) -> Arguments {
     }
 }
 
-/// Évite les doublons en comparant group:artifact (sans version)
+/// Merges library lists, de-duplicating by `group:artifact` (version-agnostic).
 fn merge_libraries(vanilla_libs: Vec<Library>, quilt_libs: Vec<Library>) -> Vec<Library> {
     let capacity = vanilla_libs.len() + quilt_libs.len();
     let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
 
-    // Ajouter Vanilla d'abord
+    // Insert Vanilla first
     for lib in vanilla_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
     }
 
-    // Quilt écrase Vanilla si même artifact (version plus récente)
+    // Quilt overrides Vanilla on key collision (typically a newer version)
     for lib in quilt_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
@@ -130,7 +136,7 @@ fn merge_libraries(vanilla_libs: Vec<Library>, quilt_libs: Vec<Library>) -> Vec<
     lib_map.into_values().collect()
 }
 
-/// Extrait "group:artifact" (sans version) pour identifier les doublons
+/// Extracts the `group:artifact` (version-agnostic) key used for dedup.
 fn extract_artifact_key(maven_name: &str) -> String {
     let mut parts = maven_name.split(':');
     match (parts.next(), parts.next()) {
@@ -155,7 +161,7 @@ async fn extract_libraries(full_data: &QuiltMetaData) -> Result<Vec<Library>> {
         async move {
             let (path, full_url) = maven_artifact_to_path_and_url(&lib_name, &lib_url);
 
-            // Lancer SHA1 et Size en parallèle avec tokio::join!
+            // Run SHA1 and size HEAD requests in parallel
             let (sha1, size) = tokio::join!(
                 fetch_maven_sha1(&full_url),
                 fetch_file_size(&full_url)
@@ -171,7 +177,7 @@ async fn extract_libraries(full_data: &QuiltMetaData) -> Result<Vec<Library>> {
         }
     });
 
-    // Attendre toutes les requêtes en parallèle
+    // Await all requests in parallel
     Ok(join_all(futures).await)
 }
 
@@ -183,23 +189,23 @@ fn maven_artifact_to_path_and_url(maven_name: &str, base_url: &str) -> (String, 
         _ => return (String::new(), String::new()),
     };
 
-    // Convertir group.id en chemin (ex: "org.ow2.asm" -> "org/ow2/asm")
+    // Convert group.id to a path (e.g. "org.ow2.asm" -> "org/ow2/asm")
     let group_path = group_id.replace('.', "/");
 
-    // Construire le nom du fichier JAR
+    // Build the JAR filename
     let jar_name = format!("{}-{}.jar", artifact_id, version);
 
-    // Construire le path relatif
+    // Build the relative path
     let path = format!("{}/{}/{}/{}", group_path, artifact_id, version, jar_name);
 
-    // Construire l'URL complète
+    // Build the full URL
     let base = base_url.trim_end_matches('/');
     let full_url = format!("{}/{}", base, path);
 
     (path, full_url)
 }
 
-/// Récupère le SHA1 d'un artifact Maven depuis le fichier .sha1
+/// Fetches the SHA1 of a Maven artifact from its sibling `.sha1` file.
 async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     let sha1_url = format!("{}.sha1", jar_url);
 
@@ -214,7 +220,7 @@ async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     }
 }
 
-/// Récupère la taille d'un fichier sans le télécharger (HEAD request)
+/// Fetches a remote file's size without downloading the body (HEAD request).
 async fn fetch_file_size(url: &str) -> Option<u64> {
     CLIENT.head(url)
         .send()

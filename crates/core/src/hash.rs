@@ -11,6 +11,7 @@ use std::io::Read;
 use tokio::fs;
 use thiserror::Error;
 
+/// Errors raised by the hashing helpers.
 #[derive(Debug, Error)]
 pub enum HashError {
     #[error("IO error: {0}")]

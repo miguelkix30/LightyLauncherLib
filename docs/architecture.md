@@ -54,7 +54,6 @@ graph TD
     Launch[lighty-launch]
     Loaders[lighty-loaders]
     Version[lighty-version]
-    Tauri[lighty-tauri]
 
     User --> Launcher
     Launcher --> Core
@@ -64,7 +63,6 @@ graph TD
     Launcher --> Launch
     Launcher --> Loaders
     Launcher --> Version
-    Launcher --> Tauri
 
     Auth --> Event
     Java --> Core
@@ -76,10 +74,6 @@ graph TD
     Loaders --> Core
     Loaders --> Event
     Version --> Loaders
-    Tauri --> Core
-    Tauri --> Auth
-    Tauri --> Launch
-    Tauri --> Version
 ```
 
 ## Core Modules
@@ -253,30 +247,6 @@ graph TD
 - `lighty-event` (optional)
 
 **Documentation**: [lighty-launch](../crates/launch/README.md)
-
----
-
-### lighty-tauri
-
-**Purpose**: Tauri desktop integration
-
-**Requires**: `tauri-commands` feature
-
-**Responsibilities**:
-- Tauri command wrappers
-- State management for Tauri
-- Frontend-backend communication
-- Pre-built commands for common operations
-
-**Key Exports**:
-- `lighty_plugin()` - Tauri plugin
-- Commands for auth, launch, java, etc.
-
-**Dependencies**:
-- All other lighty crates
-- Tauri framework
-
-**Documentation**: Available in `lighty-tauri` crate
 
 ---
 

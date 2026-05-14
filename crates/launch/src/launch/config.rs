@@ -5,7 +5,6 @@
 //!
 //! Configure username, UUID, and Java distribution globally instead of passing them to each launch call.
 
-use once_cell::sync::OnceCell;
 use lighty_java::JavaDistribution;
 
 /// Launch configuration
@@ -53,34 +52,3 @@ impl Default for LaunchConfig {
     }
 }
 
-static LAUNCH_CONFIG: OnceCell<LaunchConfig> = OnceCell::new();
-
-/// Initialize the global launch configuration
-///
-/// This function must be called before using `launch()`.
-/// If not called, default values will be used.
-///
-/// # Arguments
-/// - `config`: Launch configuration
-///
-/// # Example
-/// ```no_run
-/// use lighty_launch::launch_config::{init_launch_config, LaunchConfig};
-/// use lighty_java::JavaDistribution;
-///
-/// init_launch_config(LaunchConfig::new(
-///     "Steve",
-///     "12345678-1234-5678-1234-567812345678",
-///     JavaDistribution::Zulu
-/// ));
-/// ```
-pub fn init_launch_config(config: LaunchConfig) {
-    LAUNCH_CONFIG.set(config).ok();
-}
-
-/// Get the current launch configuration
-///
-/// If not initialized via `init_launch_config()`, returns default values.
-pub(crate) fn get_config() -> LaunchConfig {
-    LAUNCH_CONFIG.get_or_init(LaunchConfig::default).clone()
-}

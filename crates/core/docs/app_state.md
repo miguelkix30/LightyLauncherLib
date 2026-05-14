@@ -128,7 +128,7 @@ Returns the crate version from `Cargo.toml`.
 **Example:**
 ```rust
 let version = AppState::get_app_version();
-println!("Version: {}", version); // e.g., "0.8.6"
+println!("Version: {}", version); // e.g., "26.5.1"
 ```
 
 #### `AppState::get_organization()`

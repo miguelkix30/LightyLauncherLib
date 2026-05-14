@@ -342,45 +342,6 @@ pub mod macros {
 }
 
 // ============================================================================
-// Tauri Module
-// ============================================================================
-
-#[cfg(feature = "tauri-commands")]
-pub mod tauri {
-    //! Tauri command integration
-    //!
-    //! Provides ready-to-use Tauri commands for frontend integration:
-    //! - Authentication commands (offline, Microsoft, Azuriom)
-    //! - Launch commands
-    //! - Java distribution listing
-    //! - Loader listing
-    //! - Version management
-    //! - Path utilities
-    //!
-    //! ## Quick Start
-    //!
-    //! ```no_run
-    //! use lighty_launcher::tauri::lighty_plugin;
-    //!
-    //! tauri::Builder::default()
-    //!     .plugin(lighty_plugin())
-    //!     .run(tauri::generate_context!())
-    //!     .expect("error running tauri application");
-    //! ```
-
-    pub use lighty_tauri::lighty_plugin;
-    pub use lighty_tauri::commands::*;
-    pub use lighty_tauri::core::{
-        AppState,
-        VersionConfig,
-        LaunchConfig,
-        LaunchResult,
-        LoaderInfo,
-        JavaDistInfo,
-    };
-}
-
-// ============================================================================
 // Prelude - Commonly used imports
 // ============================================================================
 
@@ -452,7 +413,3 @@ pub use lighty_launch as _launch;
 pub use lighty_loaders as _loaders;
 #[doc(hidden)]
 pub use lighty_version as _version;
-
-#[cfg(feature = "tauri-commands")]
-#[doc(hidden)]
-pub use lighty_tauri as _tauri;

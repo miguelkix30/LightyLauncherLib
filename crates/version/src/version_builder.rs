@@ -5,9 +5,9 @@ use once_cell::sync::Lazy;
 use directories::ProjectDirs;
 use lighty_loaders::types::VersionInfo;
 
-/// Structure principale pour configurer une version Minecraft avec un loader
+/// Configures a Minecraft instance: name, loader, versions, and on-disk paths.
 ///
-/// # Exemples
+/// # Examples
 ///
 /// ```rust
 /// use lighty_version::VersionBuilder;
@@ -15,7 +15,7 @@ use lighty_loaders::types::VersionInfo;
 ///
 /// let builder = VersionBuilder::new("my-profile", Loader::Vanilla, "0.15.0", "1.20.1", &PROJECT_DIRS);
 ///
-/// // Ou avec le builder pattern:
+/// // Or with the builder pattern:
 /// let builder = VersionBuilder::new("my-profile", Loader::Vanilla, "0.15.0", "1.20.1", &PROJECT_DIRS)
 ///     .with_custom_game_dir(PathBuf::from("./games"))
 ///     .with_custom_java_dir(PathBuf::from("./java"));
@@ -32,9 +32,9 @@ pub struct VersionBuilder<'a, L = ()> {
 }
 
 impl<'a, L> VersionBuilder<'a, L> {
-    /// Crée un nouveau VersionBuilder avec les paramètres par défaut
+    /// Creates a new `VersionBuilder` with default paths.
     ///
-    /// Les répertoires par défaut sont :
+    /// Default directories:
     /// - `game_dirs`: `{data_dir}/{name}`
     /// - `java_dirs`: `{config_dir}/jre`
     pub fn new(
@@ -55,9 +55,9 @@ impl<'a, L> VersionBuilder<'a, L> {
         }
     }
 
-    /// Définit un répertoire de jeu personnalisé
+    /// Overrides the game directory.
     ///
-    /// # Exemple
+    /// # Example
     /// ```rust
     /// let builder = VersionBuilder::new(...)
     ///     .with_custom_game_dir(PathBuf::from("./custom/games"));
@@ -67,9 +67,9 @@ impl<'a, L> VersionBuilder<'a, L> {
         self
     }
 
-    /// Définit un répertoire Java personnalisé
+    /// Overrides the Java directory.
     ///
-    /// # Exemple
+    /// # Example
     /// ```rust
     /// let builder = VersionBuilder::new(...)
     ///     .with_custom_java_dir(PathBuf::from("./custom/java"));
@@ -79,19 +79,19 @@ impl<'a, L> VersionBuilder<'a, L> {
         self
     }
 
-    /// Change le loader
+    /// Replaces the loader.
     pub fn with_loader(mut self, loader: L) -> Self {
         self.loader = loader;
         self
     }
 
-    /// Change la version du loader
+    /// Replaces the loader version.
     pub fn with_loader_version(mut self, version: &str) -> Self {
         self.loader_version = version.to_string();
         self
     }
 
-    /// Change la version de Minecraft
+    /// Replaces the Minecraft version.
     pub fn with_minecraft_version(mut self, version: &str) -> Self {
         self.minecraft_version = version.to_string();
         self
@@ -126,7 +126,7 @@ impl<'a, L: Clone + Send + Sync + Debug> VersionInfo for VersionBuilder<'a, L> {
     }
 }
 
-// Implémentation pour &VersionBuilder (permet de passer des références)
+// Impl for &VersionBuilder so callers can pass borrowed builders.
 impl<'a, 'b, L: Clone + Send + Sync + Debug> VersionInfo for &'b VersionBuilder<'a, L> {
     type LoaderType = L;
 

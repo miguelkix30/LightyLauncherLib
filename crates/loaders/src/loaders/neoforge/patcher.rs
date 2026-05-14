@@ -13,24 +13,24 @@ use crate::utils::error::QueryError;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
-/// Contexte pour l'exécution d'un processor NeoForge
+/// Execution context shared by every NeoForge processor invocation.
 pub struct ProcessorContext {
-    /// Répertoire de jeu
+    /// Game directory.
     pub game_dir: PathBuf,
-    /// Répertoire des bibliothèques
+    /// Libraries directory (root of the Maven layout under the game dir).
     pub libraries_dir: PathBuf,
-    /// Version Minecraft
+    /// Minecraft version.
     pub minecraft_version: String,
-    /// Chemin vers le JAR de l'installer
+    /// Path to the installer JAR.
     pub installer_path: PathBuf,
-    /// Map des données avec substitutions
+    /// Substitution data: `{KEY}` placeholders → resolved values.
     pub data: HashMap<String, String>,
-    /// Side (client ou server)
+    /// Side: `"client"` or `"server"`.
     pub side: String,
 }
 
 impl ProcessorContext {
-    /// Crée un nouveau contexte pour l'exécution des processors
+    /// Builds a fresh processor context from an instance and its installer.
     pub fn new<V: VersionInfo>(
         version: &V,
         installer_path: PathBuf,
@@ -40,13 +40,13 @@ impl ProcessorContext {
         let game_dir = version.game_dirs();
         let libraries_dir = game_dir.join("libraries");
 
-        // Construire la map de données pour les substitutions
+        // Build the substitution map
         let mut data = HashMap::new();
         for (key, value) in &metadata.data {
             data.insert(key.clone(), value.client.clone());
         }
 
-        // Ajouter les variables de base pour les substitutions
+        // Add the built-in substitution variables
         data.insert("ROOT".to_string(), game_dir.to_string_lossy().to_string());
         data.insert(
             "LIBRARY_DIR".to_string(),
@@ -57,14 +57,14 @@ impl ProcessorContext {
             version.minecraft_version().to_string(),
         );
 
-        // Ajouter le côté et le chemin vers l'installer
+        // Add side and installer path
         data.insert("SIDE".to_string(), side.clone());
         data.insert(
             "INSTALLER".to_string(),
             installer_path.to_string_lossy().to_string(),
         );
 
-        // Ajouter le chemin vers le JAR de Minecraft
+        // Add the Minecraft client JAR path
         let minecraft_jar = game_dir.join(format!("{}.jar", version.name()));
         data.insert(
             "MINECRAFT_JAR".to_string(),
@@ -81,7 +81,8 @@ impl ProcessorContext {
         }
     }
 
-    /// Substitue uniquement les variables {VAR} sans résoudre les coordonnées Maven
+    /// Substitutes only the `{KEY}` placeholders; leaves Maven coordinates
+    /// (`[group:artifact:...]`) and installer paths (`/path`) untouched.
     pub fn substitute_variables(&self, input: &str) -> String {
         let mut result = input.to_string();
         for (key, value) in &self.data {
@@ -91,19 +92,23 @@ impl ProcessorContext {
         result
     }
 
-    /// Substitue les patterns dans une chaîne de caractères
+    /// Fully resolves a processor argument into a usable filesystem path.
     ///
-    /// Gère les variables {VAR}, les coordonnées Maven [group:artifact:version:classifier@extension] et les chemins d'installer /path
+    /// Handles three forms:
+    /// - `{VAR}` placeholders are substituted from [`Self::data`]
+    /// - `[group:artifact:version:classifier@extension]` resolves to the
+    ///   corresponding path under [`Self::libraries_dir`]
+    /// - `/path` is treated as a path inside the installer JAR
     pub fn substitute(&self, input: &str) -> Result<String> {
         let result = self.substitute_variables(input);
 
-        // Gérer les coordonnées Maven [group:artifact:version:classifier@extension]
+        // Handle Maven coordinates [group:artifact:version:classifier@extension]
         if result.starts_with('[') && result.ends_with(']') {
             let maven_coords = &result[1..result.len() - 1];
             return self.resolve_maven_path(maven_coords);
         }
 
-        // Gérer les chemins d'installer /path
+        // Handle installer-relative paths (/path)
         if result.starts_with('/') {
             return Ok(result);
         }
@@ -111,13 +116,14 @@ impl ProcessorContext {
         Ok(result)
     }
 
-    /// Résout les coordonnées Maven en un chemin de fichier
-    /// 
-    /// Supporte les formats :
-    /// - group:artifact:version
-    /// - group:artifact:version:classifier
-    /// - group:artifact:version@extension
-    /// - group:artifact:version:classifier@extension
+    /// Resolves Maven coordinates into a filesystem path under
+    /// [`Self::libraries_dir`].
+    ///
+    /// Supported forms:
+    /// - `group:artifact:version`
+    /// - `group:artifact:version:classifier`
+    /// - `group:artifact:version@extension`
+    /// - `group:artifact:version:classifier@extension`
     fn resolve_maven_path(&self, maven_coords: &str) -> Result<String> {
         let parts: Vec<&str> = maven_coords.split(':').collect();
         if parts.len() < 3 {
@@ -129,7 +135,7 @@ impl ProcessorContext {
         let group = parts[0].replace('.', "/");
         let artifact = parts[1];
 
-        // Gérer les différentes variantes de coordonnées Maven
+        // Handle the four Maven coordinate variants
         let (version, classifier, extension) = if parts.len() >= 4 {
             // Format: group:artifact:version:classifier[@extension]
             let version = parts[2];
@@ -167,13 +173,13 @@ impl ProcessorContext {
         Ok(path.to_string_lossy().to_string())
     }
 
-    /// Extrait un fichier du JAR de l'installer vers un chemin de sortie
+    /// Extracts a single entry from the installer JAR to `output_path`.
     pub async fn extract_installer_file(
         &self,
         internal_path: &str,
         output_path: &Path,
     ) -> Result<()> {
-        // Supprimer le slash de début si présent
+        // Strip leading slash if present
         let internal_path = internal_path.trim_start_matches('/');
 
         let file = File::open(&self.installer_path).map_err(|e| QueryError::Conversion {
@@ -208,7 +214,8 @@ impl ProcessorContext {
 }
 
 
-/// Exécute tous les processors pour le côté spécifié
+/// Runs every processor whose `sides` list matches the current side
+/// (defaults to `"client"`).
 pub async fn run_processors<V: VersionInfo>(
     version: &V,
     metadata: &NeoForgeMetaData,
@@ -220,7 +227,7 @@ pub async fn run_processors<V: VersionInfo>(
 
     let total_processors = metadata.processors.len();
 
-    // Filtrer les processors pour ne garder que ceux qui doivent s'exécuter côté client
+    // Keep only the processors that should run on the client side
     let processors: Vec<&Processor> = metadata
         .processors
         .iter()
@@ -267,9 +274,9 @@ pub async fn run_processors<V: VersionInfo>(
     Ok(())
 }
 
-/// Exécute un processor individuel
+/// Runs a single processor.
 async fn execute_processor(context: &ProcessorContext, processor: &Processor) -> Result<()> {
-    // 0. Vérifier les outputs pour voir si on peut sauter ce processor
+    // 0. Skip the processor if all its declared outputs already exist with matching hashes
     if should_skip_processor(context, processor)? {
         lighty_core::trace_info!(
             loader = "neoforge",
@@ -278,7 +285,7 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         return Ok(());
     }
 
-    // 1. Télécharger le JAR du processor et les dépendances du classpath
+    // 1. Download the processor JAR and its classpath dependencies
     let jar_path = download_processor_jar(context, &processor.jar).await?;
     let mut classpath_paths = vec![jar_path.clone()];
 
@@ -287,19 +294,20 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         classpath_paths.push(cp_path);
     }
 
-    // 2. Substituer les arguments du processor
+    // 2. Substitute the processor arguments
     let mut processed_args = Vec::new();
     for arg in &processor.args {
-        // D'abord substituer uniquement les variables {VAR}
+        // First pass: substitute only the {KEY} placeholders
         let substituted = context.substitute_variables(arg);
 
         if substituted.starts_with('[') && substituted.ends_with(']') {
-            // Coordonnée Maven : résoudre le chemin et télécharger si le fichier n'existe pas
+            // Maven coordinates: resolve the path and download if the file is missing
             let maven_coords = &substituted[1..substituted.len() - 1];
             let resolved_path = context.resolve_maven_path(maven_coords)?;
             let path = PathBuf::from(&resolved_path);
             if !path.exists() {
-                // Tenter le téléchargement — si 404, c'est un output de processeur qui sera généré
+                // Try to download — a 404 means the artifact is a processor output
+                // that will be generated later, so we just ensure the parent dir exists
                 match download_processor_jar(context, maven_coords).await {
                     Ok(_) => {}
                     Err(_) => {
@@ -316,7 +324,7 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
             }
             processed_args.push(resolved_path);
         } else if substituted.starts_with('/') {
-            // Chemin d'installer : extraire depuis le JAR
+            // Installer-relative path: extract the entry from the installer JAR
             let internal_path = &substituted[1..];
             let target_path = extract_and_resolve(context, internal_path).await?;
             processed_args.push(target_path);
@@ -325,10 +333,10 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         }
     }
 
-    // 3. Extraire la Main-Class du JAR du processor
+    // 3. Extract the Main-Class from the processor JAR
     let main_class = extract_main_class(&jar_path)?;
 
-    // 4. Construire le classpath pour Java
+    // 4. Build the classpath argument for the JVM
     let classpath_strings: Vec<String> = classpath_paths
         .iter()
         .map(|p| p.to_string_lossy().to_string())
@@ -343,8 +351,8 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         "Processor configuration prepared"
     );
 
-    // 5. Exécuter le processor avec Java
-    // TODO: Intégrer avec le système Java de lighty_launcher
+    // 5. Run the processor through the system `java`
+    // TODO: integrate with lighty_launcher's managed Java runtime
     let output = tokio::process::Command::new("java")
         .arg("-cp")
         .arg(&classpath)
@@ -373,7 +381,8 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
     Ok(())
 }
 
-/// Télécharge le JAR d'un processor à partir de ses coordonnées Maven et retourne le chemin local vers le fichier téléchargé
+/// Downloads a processor JAR from its Maven coordinates and returns the
+/// local path to the cached file.
 async fn download_processor_jar(context: &ProcessorContext, maven_coords: &str) -> Result<PathBuf> {
     let file_path = context.resolve_maven_path(maven_coords)?;
     let path = PathBuf::from(&file_path);
@@ -382,7 +391,7 @@ async fn download_processor_jar(context: &ProcessorContext, maven_coords: &str) 
         return Ok(path);
     }
 
-    // Construire l'URL de téléchargement à partir des coordonnées Maven
+    // Build the download URL from the Maven coordinates
     let url = build_maven_url(maven_coords)?;
 
     lighty_core::trace_debug!(
@@ -404,7 +413,7 @@ async fn download_processor_jar(context: &ProcessorContext, maven_coords: &str) 
     Ok(path)
 }
 
-/// Construit l'URL de téléchargement pour un artifact Maven à partir de ses coordonnées
+/// Builds the NeoForge Maven download URL for the given coordinates.
 fn build_maven_url(maven_coords: &str) -> Result<String> {
     let parts: Vec<&str> = maven_coords.split(':').collect();
     if parts.len() < 3 {
@@ -416,7 +425,7 @@ fn build_maven_url(maven_coords: &str) -> Result<String> {
     let group = parts[0].replace('.', "/");
     let artifact = parts[1];
 
-    // Gérer les différentes variantes de coordonnées Maven
+    // Handle the four Maven coordinate variants
     let (version, classifier, extension) = if parts.len() >= 4 {
         // Format: group:artifact:version:classifier[@extension]
         let version = parts[2];
@@ -444,7 +453,7 @@ fn build_maven_url(maven_coords: &str) -> Result<String> {
         format!("{}-{}.{}", artifact, version, extension)
     };
 
-    // Construire l'URL de téléchargement à partir des coordonnées Maven
+    // Build the download URL on the NeoForge Maven repository
     let base_url = "https://maven.neoforged.net/releases";
     let url = format!(
         "{}/{}/{}/{}/{}",
@@ -454,7 +463,8 @@ fn build_maven_url(maven_coords: &str) -> Result<String> {
     Ok(url)
 }
 
-/// Extrait un fichier du JAR de l'installer et retourne le chemin vers le fichier extrait
+/// Extracts an entry from the installer JAR and returns the path to the
+/// extracted file under the launcher's libraries layout.
 async fn extract_and_resolve(context: &ProcessorContext, internal_path: &str) -> Result<String> {
     let file_name = internal_path
         .split('/')
@@ -463,7 +473,7 @@ async fn extract_and_resolve(context: &ProcessorContext, internal_path: &str) ->
             message: format!("Invalid internal path: {}", internal_path),
         })?;
 
-    // Construire le chemin de sortie pour l'extraction
+    // Build the destination path for the extracted file
     let output_path = context
         .libraries_dir
         .join("net")
@@ -481,13 +491,14 @@ async fn extract_and_resolve(context: &ProcessorContext, internal_path: &str) ->
     Ok(output_path.to_string_lossy().to_string())
 }
 
-/// Vérifie si un processor doit être sauté en fonction de ses outputs
+/// Returns `true` when every declared output already exists with the
+/// expected hash, meaning the processor can be skipped.
 fn should_skip_processor(context: &ProcessorContext, processor: &Processor) -> Result<bool> {
     if processor.outputs.is_empty() {
         return Ok(false);
     }
 
-    // Vérifier chaque output : s'il n'existe pas ou si le hash ne correspond pas, on doit exécuter le processor
+    // For each output: if it's missing or the hash mismatches, the processor must run
     for (output_path_pattern, expected_hash_pattern) in &processor.outputs {
         let output_path = context.substitute(output_path_pattern)?;
         let expected_hash = context.substitute(expected_hash_pattern)?;
@@ -508,7 +519,7 @@ fn should_skip_processor(context: &ProcessorContext, processor: &Processor) -> R
     Ok(true)
 }
 
-/// Extrait la Main-Class d'un JAR en lisant son MANIFEST.MF
+/// Reads the `Main-Class` entry from a JAR's `META-INF/MANIFEST.MF`.
 fn extract_main_class(jar_path: &Path) -> Result<String> {
     let file = File::open(jar_path).map_err(|e| QueryError::Conversion {
         message: format!("Failed to open JAR: {}", e),
@@ -532,7 +543,7 @@ fn extract_main_class(jar_path: &Path) -> Result<String> {
             message: format!("Failed to read MANIFEST.MF: {}", e),
         })?;
 
-    // Rechercher la ligne "Main-Class: " et extraire la classe principale
+    // Scan the manifest for the "Main-Class:" line
     for line in contents.lines() {
         if let Some(main_class) = line.strip_prefix("Main-Class:") {
             return Ok(main_class.trim().to_string());

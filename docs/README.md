@@ -137,8 +137,7 @@ Detailed walkthroughs of all examples:
 #### Build a Custom Launcher UI
 
 1. Read: [Architecture - System Overview](./architecture.md#system-overview)
-2. Check Tauri integration: [Re-exports - Tauri Module](./reexports.md#tauri-module-lighty_launchertauri)
-3. Use events: [Examples - with_events.rs](./examples.md#with_eventsrs)
+2. Use events: [Examples - with_events.rs](./examples.md#with_eventsrs)
 
 ## Crate-Specific Documentation
 

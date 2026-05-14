@@ -10,13 +10,12 @@ use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
-/// Version override pour LightyUpdater
+/// Internal `VersionInfo` view that swaps in the real loader and Minecraft
+/// version sourced from `ServerInfo`.
 ///
-/// Utilisé pour passer les bonnes valeurs de minecraft_version et loader
-/// aux loaders de base (vanilla, fabric, etc.) lors du merge.
-///
-/// Cette structure est spécifique à LightyUpdater car on a besoin d'override
-/// ces valeurs depuis ServerInfo avant de fetcher le loader de base.
+/// LightyUpdater stores its config remotely, so before delegating to the
+/// base loader (vanilla, fabric, etc.) we need to substitute the real
+/// values that came back from the server response.
 #[derive(Debug, Clone)]
 struct VersionOverride {
     name: String,
@@ -55,15 +54,23 @@ impl VersionInfo for VersionOverride {
     }
 }
 
+/// Shared cached repository for LightyUpdater server metadata.
 pub static LIGHTY_UPDATER: Lazy<ManifestRepository<LightyQuery>> = Lazy::new(|| ManifestRepository::new());
 
+/// Sub-queries supported by the LightyUpdater loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LightyQuery {
+    /// Library overrides supplied by the LightyUpdater server.
     Libraries,
+    /// Argument overrides supplied by the LightyUpdater server.
     Arguments,
+    /// Main class override supplied by the LightyUpdater server.
     MainClass,
+    /// Mods list supplied by the LightyUpdater server.
     Mods,
+    /// Asset overrides supplied by the LightyUpdater server.
     Assets,
+    /// Full merged [`Version`]: base loader + LightyUpdater overrides.
     LightyBuilder,
 }
 
@@ -82,7 +89,7 @@ impl Query for LightyQuery {
         lighty_core::trace_debug!("   version.name() = {}", version.name());
         lighty_core::trace_debug!("   version.loader_version() = {}", version.loader_version());
 
-        // 1. Récupérer les infos du serveur Lighty
+        // 1. Fetch the Lighty server info
         let server_info_url = format!("{}/", version.loader_version());
         lighty_core::trace_debug!("📡 [LightyUpdater] Fetching ServerInfo from: {}", server_info_url);
 
@@ -99,7 +106,7 @@ impl Query for LightyQuery {
             QueryError::JsonParsing(e)
         })?;
 
-        // Trouver le serveur correspondant au nom de la version
+        // Find the server matching the instance name
         let server_info = servers_response.find_by_name(version.name())
             .cloned()
             .ok_or_else(|| {
@@ -116,7 +123,7 @@ impl Query for LightyQuery {
             server_info.last_update()
         );
 
-        // 2. Utiliser directement l'URL complète fournie par le serveur
+        // 2. Use the full metadata URL provided by the server
         let metadata_url = server_info.url();
         lighty_core::trace_debug!("[LightyUpdater] Fetching LightyMetadata from: {}", metadata_url);
 
@@ -125,7 +132,7 @@ impl Query for LightyQuery {
 
         let mut manifest: LightyMetadata = meta_response?.json().await?;
 
-        // 3. Stocker le server_info dans la metadata pour éviter un double fetch
+        // 3. Store server_info in the metadata to avoid a second fetch later
         manifest.server_info = Some(server_info);
 
         lighty_core::trace_debug!("[LightyUpdater] LightyMetadata retrieved successfully");
@@ -149,14 +156,14 @@ impl Query for LightyQuery {
 
         lighty_core::trace_debug!("🔧 [LightyUpdater] version_builder START");
 
-        // Récupérer le server_info depuis full_data (déjà fetché par fetch_full_data)
+        // Recover server_info from full_data (cached by fetch_full_data)
         let server_info = full_data.server_info.as_ref()
             .ok_or_else(|| QueryError::InvalidMetadata)?;
 
         lighty_core::trace_debug!("[LightyUpdater] ServerInfo for merge: loader={}, mc_version={}",
             server_info.loader(), server_info.minecraft_version());
 
-        // Convertir le loader string en enum
+        // Map the loader string to its enum variant
         let loader = match server_info.loader() {
             "vanilla" => Loader::Vanilla,
             "fabric" => Loader::Fabric,
@@ -166,7 +173,7 @@ impl Query for LightyQuery {
             _ => Loader::LightyUpdater,
         };
 
-        // Créer le VersionOverride avec les vraies valeurs du serveur
+        // Build a VersionOverride using the real server-provided values
         let version_override = VersionOverride {
             name: version.name().to_string(),
             loader_version: server_info.loader_version().to_string(),
@@ -181,9 +188,9 @@ impl Query for LightyQuery {
         let mut builder = merge_metadata(&version_override, server_info.loader()).await?;
         lighty_core::trace_debug!("[LightyUpdater] Base loader metadata merged");
 
-        // 2. OVERRIDE avec LightyMetadata (priorité à Lighty!)
+        // 2. Apply LightyMetadata overrides on top (Lighty wins)
 
-        // Client : Si Lighty a un client, on l'utilise
+        // Client: use Lighty's client JAR when present
         if let Some(client) = &full_data.client {
             if !client.url.is_empty() {
                 builder.client = Some(extract_client(full_data));
@@ -220,24 +227,24 @@ impl Query for LightyQuery {
             }
         }
 
-        // Mods : Si Lighty fournit des mods
-        if let Some(mods) = &full_data.mods {
+        // Mods: use Lighty's mod list when present
+        if full_data.mods.is_some() {
             builder.mods = Some(extract_mods(full_data));
         }
 
-        // MainClass : Si Lighty a une mainClass, on l'utilise
+        // MainClass: use Lighty's main class when present
         if let Some(main_class) = &full_data.main_class {
             if !main_class.main_class.is_empty() {
                 builder.main_class = extract_main_class(full_data);
             }
         }
 
-        // Arguments : On merge si présents
+        // Arguments: merge with the base when Lighty supplies any
         if let Some(_args) = &full_data.arguments {
             builder.arguments = merge_arguments(builder.arguments, extract_arguments(full_data));
         }
 
-        // JavaVersion : Si Lighty spécifie une version, on l'utilise
+        // JavaVersion: use Lighty's value if it specifies one
         if let Some(java_version) = &full_data.java_version {
             if java_version.major_version > 0 {
                 builder.java_version = extract_java_version(full_data);
@@ -252,14 +259,6 @@ impl Query for LightyQuery {
         );
 
         Ok(builder)
-    }
-}
-
-/// Extrait le VersionBuilder depuis VersionMetaData
-pub(crate) fn extract_version_builder(data: std::sync::Arc<VersionMetaData>) -> Result<Version> {
-    match data.as_ref() {
-        VersionMetaData::Version(builder) => Ok(builder.clone()),
-        _ => Err(QueryError::InvalidMetadata),
     }
 }
 
@@ -284,8 +283,8 @@ fn extract_arguments(full_data: &LightyMetadata) -> Arguments {
         .expect("extract_arguments called with None arguments");
     Arguments {
         game: args.game.clone(),
-        // Ne retourne Some que si les JVM args ne sont pas vides
-        // Sinon retourne None pour laisser le loader de base gérer
+        // Return Some only when Lighty supplied JVM args; otherwise fall
+        // back to the base loader by returning None.
         jvm: if args.jvm.is_empty() {
             None
         } else {
@@ -393,7 +392,7 @@ fn merge_natives(mut loader_natives: Vec<Native>, lighty_natives: Vec<Native>) -
     loader_natives
 }
 
-/// Merge les assets : combine les HashMap (écrase automatiquement si même hash)
+/// Merges asset maps; duplicate hashes are silently overwritten by Lighty.
 fn merge_assets(mut loader_assets: AssetsFile, lighty_assets: AssetsFile) -> AssetsFile {
     loader_assets.objects.extend(lighty_assets.objects);
     loader_assets

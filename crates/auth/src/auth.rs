@@ -1,3 +1,7 @@
+//! Core authentication types: [`Authenticator`] trait, [`UserProfile`],
+//! [`UserRole`], [`AuthProvider`], plus the [`generate_offline_uuid`] helper
+//! for deterministic offline UUIDs.
+
 use std::future::Future;
 use serde::{Deserialize, Serialize};
 use crate::AuthError;

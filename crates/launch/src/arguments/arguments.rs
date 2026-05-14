@@ -6,27 +6,50 @@ use lighty_loaders::types::VersionInfo;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-// Constantes publiques pour les clés de HashMap
+// Public placeholder keys used in the launch-argument variable map.
+//
+// These match the `${...}` tokens found inside `arguments.game` and
+// `arguments.jvm` of Mojang's version manifest. Pass them to
+// `ArgumentsBuilder::set(key, value)` to override the default substitution.
+
+/// Player username (`${auth_player_name}`).
 pub const KEY_AUTH_PLAYER_NAME: &str = "auth_player_name";
+/// Player UUID (`${auth_uuid}`).
 pub const KEY_AUTH_UUID: &str = "auth_uuid";
+/// Mojang/Microsoft access token (`${auth_access_token}`).
 pub const KEY_AUTH_ACCESS_TOKEN: &str = "auth_access_token";
+/// Xbox Live user ID (`${auth_xuid}`).
 pub const KEY_AUTH_XUID: &str = "auth_xuid";
+/// OAuth client ID (`${clientid}`).
 pub const KEY_CLIENT_ID: &str = "clientid";
+/// User type (`${user_type}`).
 pub const KEY_USER_TYPE: &str = "user_type";
+/// User properties JSON (`${user_properties}`).
 pub const KEY_USER_PROPERTIES: &str = "user_properties";
+/// Version name (`${version_name}`).
 pub const KEY_VERSION_NAME: &str = "version_name";
+/// Version type — `"release"`, `"snapshot"`, ... (`${version_type}`).
 pub const KEY_VERSION_TYPE: &str = "version_type";
+/// Game run directory (`${game_directory}`).
 pub const KEY_GAME_DIRECTORY: &str = "game_directory";
+/// Assets root directory (`${assets_root}`).
 pub const KEY_ASSETS_ROOT: &str = "assets_root";
+/// Native libraries directory (`${natives_directory}`).
 pub const KEY_NATIVES_DIRECTORY: &str = "natives_directory";
+/// Maven libraries directory (`${library_directory}`).
 pub const KEY_LIBRARY_DIRECTORY: &str = "library_directory";
+/// Assets index id (`${assets_index_name}`).
 pub const KEY_ASSETS_INDEX_NAME: &str = "assets_index_name";
+/// Launcher brand name (`${launcher_name}`).
 pub const KEY_LAUNCHER_NAME: &str = "launcher_name";
+/// Launcher version (`${launcher_version}`).
 pub const KEY_LAUNCHER_VERSION: &str = "launcher_version";
+/// Final classpath value (`${classpath}`).
 pub const KEY_CLASSPATH: &str = "classpath";
+/// OS-specific classpath separator (`${classpath_separator}`).
 pub const KEY_CLASSPATH_SEPARATOR: &str = "classpath_separator";
 
-// Constantes pour les valeurs
+// Default values used when no real session data is available
 const DEFAULT_ACCESS_TOKEN: &str = "0";
 const DEFAULT_XUID: &str = "0";
 const DEFAULT_CLIENT_ID: &str = "{client-id}";
@@ -35,7 +58,15 @@ const DEFAULT_USER_PROPERTIES: &str = "{}";
 const DEFAULT_VERSION_TYPE: &str = "release";
 const CP_FLAG: &str = "-cp";
 
+/// Builds the final argv (JVM args + main class + game args + raw args)
+/// from a resolved [`Version`] plus runtime overrides and removals.
+///
+/// Implemented blanket-style for every [`VersionInfo`]; user code rarely
+/// invokes [`Self::build_arguments`] directly — `LaunchBuilder::run`
+/// does it internally.
 pub trait Arguments {
+    /// Constructs the launch argv for `builder` using the supplied
+    /// overrides and removals.
     fn build_arguments(
         &self,
         builder: &Version,
@@ -61,15 +92,15 @@ impl<T: VersionInfo> Arguments for T {
         jvm_removals: &HashSet<String>,
         raw_args: &[String],
     ) -> Vec<String> {
-        // Créer la HashMap avec toutes les variables
+        // Build the placeholder substitution map
         let mut variables = create_variable_map(self, builder, username, uuid);
 
-        // Appliquer les overrides sur les variables
+        // Apply caller-supplied overrides on top
         for (key, value) in arg_overrides {
             variables.insert(key.clone(), value.clone());
         }
 
-        // Remplacer les variables dans les arguments
+        // Substitute `${...}` placeholders inside the game arguments
         let game_args = replace_variables_in_vec(&builder.arguments.game, &variables);
 
         let mut jvm_args = builder.arguments.jvm
@@ -77,21 +108,21 @@ impl<T: VersionInfo> Arguments for T {
             .map(|jvm| replace_variables_in_vec(jvm, &variables))
             .unwrap_or_else(|| build_default_jvm_args(&variables));
 
-        // S'assurer que les arguments JVM critiques sont toujours présents
+        // Make sure critical JVM args are always present
 
-        // 0. macOS: -XstartOnFirstThread est OBLIGATOIRE pour LWJGL/OpenGL
+        // 0. macOS: -XstartOnFirstThread is MANDATORY for LWJGL/OpenGL
         #[cfg(target_os = "macos")]
         if !jvm_args.iter().any(|arg| arg == "-XstartOnFirstThread") {
             jvm_args.insert(0, "-XstartOnFirstThread".to_string());
         }
 
-        // 1. java.library.path (pour les natives LWJGL)
+        // 1. java.library.path (LWJGL needs it to find natives)
         if !jvm_args.iter().any(|arg| arg.starts_with("-Djava.library.path=")) {
             let natives_dir = variables.get(KEY_NATIVES_DIRECTORY).cloned().unwrap_or_default();
             jvm_args.insert(0, format!("-Djava.library.path={}", natives_dir));
         }
 
-        // 2. Launcher brand et version
+        // 2. Launcher brand and version (forwarded to the game's about/log strings)
         if !jvm_args.iter().any(|arg| arg.starts_with("-Dminecraft.launcher.brand=")) {
             let launcher_name = variables.get(KEY_LAUNCHER_NAME).cloned().unwrap_or_default();
             jvm_args.insert(0, format!("-Dminecraft.launcher.brand={}", launcher_name));
@@ -102,14 +133,14 @@ impl<T: VersionInfo> Arguments for T {
             jvm_args.insert(0, format!("-Dminecraft.launcher.version={}", launcher_version));
         }
 
-        // 3. Classpath (doit être en dernier avant la mainClass)
+        // 3. Classpath (must be the last JVM arg before the main class)
         let module_path_opt = jvm_args
             .iter()
             .position(|arg| arg == "-p")
             .and_then(|p_idx| jvm_args.get(p_idx + 1).cloned());
 
         if let Some(cp_idx) = jvm_args.iter().position(|arg| arg == CP_FLAG) {
-            // -cp existe déjà dans le version.json, il faut le remplacer par une version filtrée
+            // `-cp` is already present in version.json; replace it with a filtered version
             if let Some(ref module_path) = module_path_opt {
                 lighty_core::trace_debug!("Module-path detected: {}", module_path);
                 if let Some(existing_cp) = jvm_args.get(cp_idx + 1) {
@@ -117,7 +148,7 @@ impl<T: VersionInfo> Arguments for T {
                         filter_classpath_from_modulepath(existing_cp, module_path);
                     lighty_core::trace_debug!("Classpath filtered for module-path");
 
-                    // Remplacer le classpath existant
+                    // Replace the existing classpath
                     jvm_args[cp_idx + 1] = filtered_classpath;
                 } else {
                     lighty_core::trace_warn!("-cp found but no value after it");
@@ -126,7 +157,7 @@ impl<T: VersionInfo> Arguments for T {
                 lighty_core::trace_debug!("No module-path, keeping existing classpath unchanged");
             }
         } else {
-            // -cp n'existe pas, on l'ajoute (comportement normal pour Vanilla, Fabric, etc.)
+            // No `-cp` yet — append it (default path for Vanilla, Fabric, ...)
             let classpath = variables.get(KEY_CLASSPATH).cloned().unwrap_or_default();
 
             if let Some(ref module_path) = module_path_opt {
@@ -142,21 +173,21 @@ impl<T: VersionInfo> Arguments for T {
             }
         }
 
-        // 4. Appliquer les JVM overrides
+        // 4. Apply JVM overrides
         apply_jvm_overrides(&mut jvm_args, jvm_overrides);
 
-        // 5. Appliquer les JVM removals
+        // 5. Apply JVM removals
         apply_jvm_removals(&mut jvm_args, jvm_removals);
 
-        // 6. Appliquer les arg removals (filtrer les arguments de jeu)
+        // 6. Apply arg removals (filter game arguments)
         let game_args = apply_arg_removals(game_args, arg_removals);
 
-        // Construire le Vec complet : JVM + MainClass + Game + Raw Args
+        // Build the full argv: JVM + MainClass + Game + raw args
         let mut full_args = jvm_args;
         full_args.push(builder.main_class.main_class.clone());
         full_args.extend(game_args);
 
-        // Ajouter les arguments bruts à la fin
+        // Append any raw args at the very end
         full_args.extend_from_slice(raw_args);
 
         lighty_core::trace_debug!(args = ?full_args, "Launch arguments built");
@@ -165,7 +196,7 @@ impl<T: VersionInfo> Arguments for T {
     }
 }
 
-/// Crée la HashMap avec toutes les variables de lancement
+/// Builds the launch-argument placeholder map.
 fn create_variable_map<T: VersionInfo>(
     version: &T,
     builder: &Version,
@@ -179,7 +210,7 @@ fn create_variable_map<T: VersionInfo>(
         #[cfg(not(target_os = "windows"))]
         let classpath_separator = ":";
 
-        // Authentification
+        // Authentication
         map.insert(KEY_AUTH_PLAYER_NAME.into(), username.into());
         map.insert(KEY_AUTH_UUID.into(), uuid.into());
         map.insert(KEY_AUTH_ACCESS_TOKEN.into(), DEFAULT_ACCESS_TOKEN.into());
@@ -217,7 +248,7 @@ fn create_variable_map<T: VersionInfo>(
         map
 }
 
-/// Construit le classpath à partir des libraries
+/// Builds the runtime classpath from the resolved library list.
 fn build_classpath<T: VersionInfo>(version: &T, libraries: &[lighty_loaders::types::version_metadata::Library]) -> String {
         #[cfg(target_os = "windows")]
         let separator = ";";
@@ -235,7 +266,7 @@ fn build_classpath<T: VersionInfo>(version: &T, libraries: &[lighty_loaders::typ
             })
             .collect();
 
-        // Ajouter le client.jar à la fin
+        // Append the client JAR at the end
         classpath_entries.push(
             version.game_dirs().join(format!("{}.jar", version.name())).display().to_string()
         );
@@ -243,7 +274,7 @@ fn build_classpath<T: VersionInfo>(version: &T, libraries: &[lighty_loaders::typ
         classpath_entries.join(separator)
 }
 
-/// Arguments JVM par défaut (pour anciennes versions sans JVM args)
+/// Default JVM arguments used for legacy versions that don't ship one.
 fn build_default_jvm_args(variables: &HashMap<String, String>) -> Vec<String> {
         let natives_dir = variables.get(KEY_NATIVES_DIRECTORY).cloned().unwrap_or_default();
         let launcher_name = variables.get(KEY_LAUNCHER_NAME).cloned().unwrap_or_default();
@@ -309,9 +340,9 @@ fn replace_variables_cow<'a>(
     Cow::Owned(result)
 }
 
-/// Applique les JVM overrides en ajoutant automatiquement le préfixe `-`
+/// Applies JVM overrides, prepending the `-` prefix automatically.
 ///
-/// Formate automatiquement les options JVM :
+/// Format examples:
 /// - `Xmx` → `-Xmx`
 /// - `XX:+UseG1GC` → `-XX:+UseG1GC`
 /// - `Djava.library.path` → `-Djava.library.path`
@@ -319,12 +350,12 @@ fn apply_jvm_overrides(jvm_args: &mut Vec<String>, jvm_overrides: &HashMap<Strin
     for (key, value) in jvm_overrides {
         let formatted_option = format_jvm_option(key, value);
 
-        // Vérifier si l'option existe déjà et la remplacer
+        // Replace the option if it already exists
         let key_prefix = format!("-{}", key.split('=').next().unwrap_or(key));
         if let Some(pos) = jvm_args.iter().position(|arg| arg.starts_with(&key_prefix)) {
             jvm_args[pos] = formatted_option;
         } else {
-            // Insérer avant le classpath (-cp)
+            // Insert before the classpath flag (-cp) so the classpath stays last
             if let Some(cp_pos) = jvm_args.iter().position(|arg| arg == CP_FLAG) {
                 jvm_args.insert(cp_pos, formatted_option);
             } else {
@@ -334,9 +365,9 @@ fn apply_jvm_overrides(jvm_args: &mut Vec<String>, jvm_overrides: &HashMap<Strin
     }
 }
 
-/// Formate une option JVM avec le préfixe `-` et la valeur
+/// Formats a JVM option using the appropriate separator for its kind.
 ///
-/// # Exemples
+/// # Examples
 /// - `("Xmx", "4G")` → `-Xmx4G`
 /// - `("Xms", "2G")` → `-Xms2G`
 /// - `("XX:+UseG1GC", "")` → `-XX:+UseG1GC`
@@ -345,36 +376,36 @@ fn format_jvm_option(key: &str, value: &str) -> String {
     if value.is_empty() {
         format!("-{}", key)
     } else if key.starts_with('X') && !key.contains(':') && !key.contains('=') {
-        // Options -Xmx, -Xms, etc. (pas de séparateur)
+        // `-Xmx`, `-Xms`, etc. — no separator between key and value
         format!("-{}{}", key, value)
     } else {
-        // Options -D, -XX:, etc. (avec =)
+        // `-D`, `-XX:`, etc. — use `=` as separator
         format!("-{}={}", key, value)
     }
 }
 
-/// Supprime les options JVM qui correspondent aux clés dans jvm_removals
+/// Removes JVM options whose key appears in `jvm_removals`.
 fn apply_jvm_removals(jvm_args: &mut Vec<String>, jvm_removals: &HashSet<String>) {
     jvm_args.retain(|arg| {
-        // Extraire la clé de l'argument (sans le '-' et sans la valeur)
+        // Extract the option key (drop the `-` and any value)
         let arg_key = if let Some(stripped) = arg.strip_prefix('-') {
-            // Gérer les cas -Xmx4G, -Djava.library.path=/path, -XX:+UseG1GC
+            // Handle `-Xmx4G`, `-Djava.library.path=/path`, `-XX:+UseG1GC`
             stripped.split('=').next().unwrap_or(stripped)
                 .split(|c: char| c.is_numeric()).next().unwrap_or(stripped)
         } else {
-            return true; // Garder les arguments qui ne commencent pas par '-'
+            return true; // Keep arguments that don't start with '-'
         };
 
-        // Garder l'argument si sa clé n'est pas dans jvm_removals
+        // Keep the arg if its key is not in jvm_removals
         !jvm_removals.contains(arg_key)
     });
 }
 
-/// Filtre les arguments de jeu en supprimant ceux qui correspondent à arg_removals
+/// Filters out game arguments whose key matches an entry in `arg_removals`.
 fn apply_arg_removals(game_args: Vec<String>, arg_removals: &HashSet<String>) -> Vec<String> {
     game_args.into_iter()
         .filter(|arg| {
-            // Supprimer l'argument s'il correspond exactement ou s'il commence par la clé
+            // Drop the arg if it matches exactly or starts with `--{key}`
             !arg_removals.iter().any(|removal| {
                 arg == removal || arg.starts_with(&format!("--{}", removal))
             })
@@ -382,7 +413,8 @@ fn apply_arg_removals(game_args: Vec<String>, arg_removals: &HashSet<String>) ->
         .collect()
 }
 
-/// Filtre le classpath en excluant les JARs dont l'artefact est présent dans le module-path
+/// Filters the classpath, excluding JARs whose artifact already appears
+/// on the module-path (matched by base name, version-agnostic).
 fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> String {
     let separator = get_path_separator();
 
@@ -393,13 +425,13 @@ fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> Strin
                 .file_name()
                 .and_then(|f| f.to_str())
                 .and_then(|filename| {
-                    // Extraire le nom de base de l'artefact en supprimant la version et l'extension
-                    // Exemple: "asm-analysis-9.5.jar" -> "asm-analysis"
+                    // Extract the base artifact name by stripping version and extension.
+                    // Example: "asm-analysis-9.5.jar" -> "asm-analysis"
                     if let Some(stem) = filename.strip_suffix(".jar") {
-                        // Trouver la dernière position avant un chiffre
+                        // Find the last digit position
                         let mut base_name = stem;
                         if let Some(pos) = stem.rfind(|c: char| c.is_ascii_digit()) {
-                            // Remonter jusqu'au début de la version (après le dernier -)
+                            // Walk back to the start of the version (last `-` before the digit)
                             if let Some(dash_pos) = stem[..pos].rfind('-') {
                                 base_name = &stem[..dash_pos];
                             }
@@ -422,8 +454,8 @@ fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> Strin
                 .and_then(|f| f.to_str())
             {
                 if let Some(stem) = filename.strip_suffix(".jar") {
-                    // Extraire le nom de base de l'artefact en supprimant la version et l'extension
-                    // Exemple: "asm-analysis-9.5.jar" -> "asm-analysis"
+                    // Extract the base artifact name by stripping version and extension.
+                    // Example: "asm-analysis-9.5.jar" -> "asm-analysis"
                     let base_name = if let Some(pos) = stem.rfind(|c: char| c.is_ascii_digit()) {
                         if let Some(dash_pos) = stem[..pos].rfind('-') {
                             &stem[..dash_pos]
@@ -433,13 +465,13 @@ fn filter_classpath_from_modulepath(classpath: &str, module_path: &str) -> Strin
                     } else {
                         stem
                     };
-                    // Garder le JAR dans le classpath seulement si son artefact n'est pas dans le module-path
+                    // Keep the JAR only if its artifact is NOT on the module-path
                     !module_artifacts.contains(base_name)
                 } else {
-                    true // Pas un JAR, garder par sécurité
+                    true // Not a JAR — keep defensively
                 }
             } else {
-                true // Pas de nom de fichier, garder par sécurité
+                true // No filename — keep defensively
             }
         })
         .collect::<Vec<&str>>()

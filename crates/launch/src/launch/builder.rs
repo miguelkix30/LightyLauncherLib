@@ -226,7 +226,7 @@ where
         let key_str = key.into();
         let value_str = value.into();
 
-        // Liste des clés de placeholders connues
+        // Known launch placeholder keys (overrides target the variable map)
         const KNOWN_PLACEHOLDERS: &[&str] = &[
             "auth_player_name", "auth_uuid", "auth_access_token", "auth_xuid",
             "clientid", "user_type", "user_properties",
@@ -236,11 +236,11 @@ where
             "classpath", "classpath_separator",
         ];
 
-        // Si c'est un placeholder connu, override
+        // Known placeholders are recorded as substitutions
         if KNOWN_PLACEHOLDERS.contains(&key_str.as_str()) {
             self.overrides.insert(key_str, value_str);
         } else {
-            // Sinon, ajouter comme argument brut avec préfixe --
+            // Anything else is appended as a raw `--key [value]` argument
             let formatted_arg = if key_str.starts_with("--") {
                 key_str
             } else if key_str.starts_with('-') {

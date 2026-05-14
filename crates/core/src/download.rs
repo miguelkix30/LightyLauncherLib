@@ -24,7 +24,10 @@ use crate::{trace_debug};
 use tokio::fs;
 use crate::hosts::HTTP_CLIENT;
 
-/// Download file using HTTP_CLIENT without any progress tracking
+/// Downloads `url` to `path` without progress reporting.
+///
+/// Used for small one-shot fetches where streaming and progress callbacks
+/// would be overkill (e.g. mod-loader installer JARs, single manifests).
 pub async fn download_file_untracked(url: &str, path: impl AsRef<Path>) -> DownloadResult<()> {
     let path = path.as_ref().to_owned();
     let response = HTTP_CLIENT.get(url).send().await?.error_for_status()?;
@@ -34,6 +37,12 @@ pub async fn download_file_untracked(url: &str, path: impl AsRef<Path>) -> Downl
     Ok(())
 }
 
+/// Downloads `url` into a `Vec<u8>`, invoking `on_progress(current, total)`
+/// after each chunk.
+///
+/// `total` is taken from `Content-Length` and is `0` when the server does
+/// not announce one. The function returns the complete body once the
+/// response stream ends.
 pub async fn download_file<F>(url: &str, on_progress: F) -> DownloadResult<Vec<u8>>
 where
     F: Fn(u64, u64),

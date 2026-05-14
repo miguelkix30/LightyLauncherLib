@@ -3,23 +3,29 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::SystemTime;
-use tokio::process::Child;
 
 use super::errors::{InstanceError, InstanceResult};
 
-/// Internal representation of a running game instance
+/// Internal representation of a running game instance.
+///
+/// `version`/`username`/`game_dir`/`started_at` are stored for future
+/// audit/debug APIs (e.g. `pub fn started_at()` exposed via `InstanceControl`).
 pub(crate) struct GameInstance {
     /// Process ID
     pub pid: u32,
     /// Instance name
     pub instance_name: String,
     /// Version string (e.g., "1.20.1-fabric-0.15.0")
+    #[allow(dead_code)]
     pub version: String,
     /// Username used to launch
+    #[allow(dead_code)]
     pub username: String,
     /// Game directory path
+    #[allow(dead_code)]
     pub game_dir: PathBuf,
     /// Launch timestamp
+    #[allow(dead_code)]
     pub started_at: SystemTime,
 }
 
@@ -76,13 +82,17 @@ impl InstanceManager {
     /// The instance will be unregistered automatically by the console handler.
     pub async fn close_instance(&self, pid: u32) -> InstanceResult<()> {
         let mut instances = self.instances.write().unwrap();
-        let instance = instances
+        instances
             .remove(&pid)
             .ok_or(InstanceError::NotFound { pid })?;
 
         drop(instances); // Release the lock
 
-        // Kill the process using system kill
+        // Platform-specific kill:
+        // - Windows: shell out to `taskkill /F`, which terminates the process
+        //   tree without raising a console close event.
+        // - Unix: send SIGTERM so the JVM runs its shutdown hooks. SIGKILL is
+        //   deliberately avoided so the world/save state has a chance to flush.
         #[cfg(target_os = "windows")]
         {
             use std::process::Command;
@@ -117,11 +127,5 @@ impl InstanceManager {
         }
 
         Ok(())
-    }
-
-    /// Check if there are any running instances
-    pub fn has_running_instances(&self) -> bool {
-        let instances = self.instances.read().unwrap();
-        !instances.is_empty()
     }
 }

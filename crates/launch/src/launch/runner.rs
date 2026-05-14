@@ -1,3 +1,4 @@
+#[cfg(not(feature = "events"))]
 use lighty_java::JreError;
 use lighty_core::time_it;
 use lighty_java::jre_downloader::jre_download;
@@ -22,6 +23,10 @@ use lighty_loaders::neoforge::neoforge::{run_install_processors, NEOFORGE};
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
 
+/// Extension trait that adds [`Self::launch`] to any installable instance.
+///
+/// Implemented automatically for every type that satisfies the launch
+/// pipeline's trait bounds (see the blanket impl below).
 pub trait Launch {
     /// Launch the game with a builder pattern
     ///
@@ -52,7 +57,7 @@ pub trait Launch {
         Self: Sized;
 }
 
-// Implémentation générique pour tout type implémentant VersionInfo + les traits nécessaires
+// Blanket impl for any type that implements VersionInfo plus the required traits
 impl<T> Launch for T
 where
     T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
@@ -79,7 +84,7 @@ where
 {
         let username = &profile.username;
         let uuid = &profile.uuid;
-        // 1. Préparer les métadonnées du loader
+        // 1. Fetch the loader metadata
         let metadata = prepare_metadata(
             version,
             #[cfg(feature = "events")]
@@ -88,7 +93,7 @@ where
 
         let version_data = extract_version(&metadata)?;
 
-        // 2. S'assurer que Java est installé
+        // 2. Make sure Java is installed
         let java_path = ensure_java_installed(
             version,
             version_data,
@@ -97,23 +102,23 @@ where
             event_bus,
         ).await?;
 
-        // 3. Installer les dépendances Minecraft
+        // 3. Install Minecraft dependencies (libraries, natives, client, assets)
         time_it!("Install delay", version.install(
             version_data,
             #[cfg(feature = "events")]
             event_bus,
         ).await?);
 
-        // 3b. Exécuter les processors NeoForge (après download des libraries)
-        // TODO: Ajouter un système de processors pour les loaders qui en ont besoin (ex: NeoForge) 
-        // (à exécuter après l'installation des libraries mais avant le lancement du jeu)
+        // 3b. Run NeoForge processors (must be after libraries are downloaded)
+        // TODO: generalize this into a per-loader post-install hook for any
+        // loader that needs one (currently only NeoForge does).
         #[cfg(feature = "neoforge")]
         if matches!(version.loader(), Loader::NeoForge) {
             let install_profile = NEOFORGE.get_raw(version).await?;
             run_install_processors(version, install_profile.as_ref()).await?;
         }
 
-        // 4. Lancer le jeu
+        // 4. Launch the game
         execute_game(
             version,
             version_data,
@@ -130,7 +135,7 @@ where
         ).await
 }
 
-/// Récupère les métadonnées complètes du loader
+/// Fetches the loader's full metadata document.
 async fn prepare_metadata<T>(
     builder: &mut T,
     #[cfg(feature = "events")] event_bus: Option<&EventBus>,
@@ -140,6 +145,7 @@ where
 {
     lighty_core::trace_debug!("[Launch] Fetching metadata for loader: {:?}", builder.loader());
 
+    #[cfg(feature = "events")]
     let loader_name = format!("{:?}", builder.loader());
 
     #[cfg(feature = "events")]
@@ -167,7 +173,7 @@ where
     Ok(metadata)
 }
 
-/// S'assure que Java est installé et retourne le chemin vers l'exécutable
+/// Ensures Java is installed for `version` and returns the binary path.
 async fn ensure_java_installed<T>(
     builder: &T,
     version: &Version,
@@ -179,7 +185,7 @@ where
 {
     let java_version = version.java_version.major_version;
 
-    // Vérifier si Java est déjà installé
+    // Look for an existing Java install before downloading
     match find_java_binary(builder.java_dirs(), java_distribution, &java_version).await {
         Ok(path) => {
             lighty_core::trace_info!("[Java] Java {} already installed at: {:?}", java_version, path);
@@ -233,7 +239,7 @@ where
     }
 }
 
-/// Lance le jeu avec les arguments appropriés
+/// Spawns the game process and wires up event/console handlers.
 async fn execute_game<T>(
     builder: &T,
     version: &Version,
@@ -253,10 +259,10 @@ where
     use crate::instance::{handle_console_streams, INSTANCE_MANAGER};
     use crate::instance::manager::GameInstance;
 
-    // Construire les arguments
+    // Build the full argv (JVM args + main class + game args)
     let arguments = builder.build_arguments(version, username, uuid, arg_overrides, arg_removals, jvm_overrides, jvm_removals, raw_args);
 
-    // Créer JavaRuntime avec le chemin vers java.exe
+    // Wrap the Java binary path in a runtime helper
     let java_runtime = JavaRuntime::new(java_path);
     lighty_core::trace_info!("[Launch] Executing game...");
 
@@ -266,7 +272,7 @@ where
 
             lighty_core::trace_info!("[Launch] Game launched successfully, PID: {}", pid);
 
-            // Enregistrer l'instance (metadata only, no child handle)
+            // Register the instance (metadata only — the child is owned by the console task)
             let instance = GameInstance {
                 pid,
                 instance_name: builder.name().to_string(),
@@ -278,7 +284,7 @@ where
 
             INSTANCE_MANAGER.register_instance(instance).await;
 
-            // Émettre événement InstanceLaunched
+            // Emit InstanceLaunched event
             #[cfg(feature = "events")]
             if let Some(bus) = event_bus {
                 use lighty_event::{Event, InstanceLaunchedEvent};
@@ -291,15 +297,15 @@ where
                     timestamp: std::time::SystemTime::now(),
                 }));
 
-                // Spawner le détecteur de fenêtre
+                // Spawn the window-appearance watcher
                 let bus_clone = bus.clone();
                 let instance_name = builder.name().to_string();
                 let version = format!("{}-{}", builder.minecraft_version(), builder.loader_version());
                 tokio::spawn(detect_window_appearance(pid, instance_name, version, bus_clone));
             }
 
-            // Spawner le console streaming handler
-            // This takes ownership of the child and handles all I/O until exit
+            // Spawn the console-streaming handler. It takes ownership of the
+            // child and handles all stdio until the process exits.
             tokio::spawn(handle_console_streams(
                 pid,
                 builder.name().to_string(),
@@ -317,7 +323,7 @@ where
     }
 }
 
-/// Extrait l'objet Version depuis VersionMetaData
+/// Extracts the [`Version`] payload from a [`VersionMetaData`] variant.
 fn extract_version(metadata: &VersionMetaData) -> InstallerResult<&Version> {
     match metadata {
         VersionMetaData::Version(v) => Ok(v),
@@ -325,7 +331,10 @@ fn extract_version(metadata: &VersionMetaData) -> InstallerResult<&Version> {
     }
 }
 
-/// Détecte l'apparition de la fenêtre du jeu et émet un événement
+/// Watches for the game window to appear and emits `InstanceWindowAppeared`.
+///
+/// On Windows: polls every 100ms for up to 30s.
+/// On other platforms: emits unconditionally after a 5s delay (heuristic).
 #[cfg(feature = "events")]
 async fn detect_window_appearance(
     pid: u32,
@@ -337,7 +346,7 @@ async fn detect_window_appearance(
     {
         use std::time::Duration;
 
-        // Vérifier toutes les 100ms pendant 30 secondes maximum
+        // Poll every 100ms for up to 30 seconds
         let max_attempts = 300;
         let check_interval = Duration::from_millis(100);
 
@@ -364,7 +373,7 @@ async fn detect_window_appearance(
 
     #[cfg(not(windows))]
     {
-        // Sur les autres plateformes, attendre un délai fixe (approximation)
+        // Non-Windows platforms: emit unconditionally after a fixed delay (best-effort)
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
         lighty_core::trace_info!("[Launch] Assuming window appeared for PID: {} (non-Windows platform)", pid);
@@ -380,7 +389,9 @@ async fn detect_window_appearance(
     }
 }
 
-/// Vérifie si un processus a une fenêtre visible (Windows uniquement)
+/// Returns `true` if the given PID owns at least one visible top-level window.
+///
+/// Windows-only; uses `EnumWindows` + `IsWindowVisible` + `GetWindowThreadProcessId`.
 #[cfg(all(windows, feature = "events"))]
 fn has_visible_window(pid: u32) -> bool {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
@@ -396,18 +407,18 @@ fn has_visible_window(pid: u32) -> bool {
     unsafe extern "system" fn enum_window_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let data = &mut *(lparam.0 as *mut EnumData);
 
-        // Vérifier si la fenêtre est visible
+        // Skip invisible windows
         if IsWindowVisible(hwnd).as_bool() {
             let mut window_pid: u32 = 0;
             GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
 
             if window_pid == data.target_pid {
                 data.found = true;
-                return BOOL(0); // Arrêter l'énumération
+                return BOOL(0); // Stop enumeration
             }
         }
 
-        BOOL(1) // Continuer l'énumération
+        BOOL(1) // Continue enumeration
     }
 
     let mut data = EnumData {

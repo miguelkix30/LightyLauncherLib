@@ -17,13 +17,19 @@ use lighty_core::hosts::HTTP_CLIENT;
 use lighty_core::mkdir;
 pub type Result<T> = std::result::Result<T, QueryError>;
 
+/// Shared cached repository for NeoForge manifests.
 pub static NEOFORGE: Lazy<ManifestRepository<NeoForgeQuery>> = Lazy::new(|| ManifestRepository::new());
 
+/// Sub-queries supported by the NeoForge loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NeoForgeQuery {
+    /// Library list from `install_profile.json` (processor-side libraries).
     Libraries,
+    /// Game/JVM arguments (not yet implemented — falls through to `todo!()`).
     Arguments,
+    /// Main class (not yet implemented — falls through to `todo!()`).
     MainClass,
+    /// Full merged [`Version`] for a NeoForge instance.
     NeoForgeBuilder,
 }
 
@@ -38,7 +44,7 @@ impl Query for NeoForgeQuery {
     }
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<NeoForgeMetaData> {
-        // Construire l'URL de l'installer
+        // Build the installer URL
         let installer_url = build_installer_url(version);
 
         lighty_core::trace_debug!(url = %installer_url, loader = "neoforge", "Installer URL constructed");
@@ -48,7 +54,7 @@ impl Query for NeoForgeQuery {
 
         let installer_path = profiles_dir.join(format!("neoforge-{}-installer.jar", version.loader_version()));
 
-        // Vérifier et télécharger l'installer si nécessaire
+        // Verify cached installer and re-download if needed
         let needs_download = if installer_path.exists() {
             match verify_installer_sha1(&installer_path, &installer_url).await {
                 Ok(true) => {
@@ -85,7 +91,7 @@ impl Query for NeoForgeQuery {
             }
         }
 
-        // Lire les JSONs directement depuis le JAR
+        // Read the embedded JSONs directly from the installer JAR (no disk extraction)
         let (install_profile, _) = read_jsons_from_jar(&installer_path).await?;
 
         lighty_core::trace_info!(loader = "neoforge", "Successfully loaded NeoForge metadata");
@@ -105,7 +111,7 @@ impl Query for NeoForgeQuery {
     }
 
     async fn version_builder<V: VersionInfo>(version: &V, _full_data: &NeoForgeMetaData) -> Result<Version> {
-        // Paralléliser la récupération des données Vanilla et la lecture du version.json
+        // Fetch Vanilla data and read version.json from the installer JAR in parallel
         let (vanilla_builder, version_meta) = tokio::try_join!(
             async {
                 let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
@@ -119,14 +125,15 @@ impl Query for NeoForgeQuery {
             }
         )?;
 
-        // Extraire UNIQUEMENT les bibliothèques du version.json (runtime)
-        // Les bibliothèques de l'install_profile.json sont uniquement pour les processors
+        // Use ONLY the runtime libraries from version.json.
+        // The libraries in install_profile.json are processor-only and
+        // must not end up on the launch classpath.
         let version_json_libs = extract_libraries_from_version_meta(&version_meta);
 
-        // Fusionner : Vanilla + version.json (priorité au version.json)
+        // Merge: Vanilla base + version.json overrides
         let merged_libs = merge_libraries(vanilla_builder.libraries, version_json_libs);
 
-        // Merger directement avec Vanilla en priorité
+        // Merge the rest with Vanilla as the base, NeoForge overriding where present
         Ok(Version {
             main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(&version_meta)),
             java_version: vanilla_builder.java_version,
@@ -141,7 +148,7 @@ impl Query for NeoForgeQuery {
     }
 }
 
-/// --------- Fonctions de merge ----------
+/// --------- Merge helpers ----------
 fn merge_main_class(vanilla: MainClass, neoforge: MainClass) -> MainClass {
     if neoforge.main_class.is_empty() {
         vanilla
@@ -169,18 +176,18 @@ fn merge_arguments(vanilla: Arguments, neoforge: Arguments) -> Arguments {
     }
 }
 
-/// Évite les doublons en comparant group:artifact (sans version)
+/// Merges library lists, de-duplicating by `group:artifact` (version-agnostic).
 fn merge_libraries(vanilla_libs: Vec<Library>, neoforge_libs: Vec<Library>) -> Vec<Library> {
     let capacity = vanilla_libs.len() + neoforge_libs.len();
     let mut lib_map: HashMap<String, Library> = HashMap::with_capacity(capacity);
 
-    // Ajouter Vanilla d'abord
+    // Insert Vanilla first
     for lib in vanilla_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
     }
 
-    // NeoForge écrase Vanilla si même artifact (version plus récente)
+    // NeoForge overrides Vanilla on key collision (typically a newer version)
     for lib in neoforge_libs {
         let key = extract_artifact_key(&lib.name);
         lib_map.insert(key, lib);
@@ -189,7 +196,7 @@ fn merge_libraries(vanilla_libs: Vec<Library>, neoforge_libs: Vec<Library>) -> V
     lib_map.into_values().collect()
 }
 
-/// Extrait "group:artifact" (sans version) pour identifier les doublons
+/// Extracts the `group:artifact` (version-agnostic) key used for dedup.
 fn extract_artifact_key(maven_name: &str) -> String {
     let mut parts = maven_name.split(':');
     match (parts.next(), parts.next()) {
@@ -198,7 +205,7 @@ fn extract_artifact_key(maven_name: &str) -> String {
     }
 }
 
-/// --------- Fonctions d'extraction ----------
+/// --------- Extraction helpers ----------
 fn extract_main_class(version_meta: &NeoForgeVersionMeta) -> MainClass {
     MainClass {
         main_class: version_meta.main_class.clone(),
@@ -273,7 +280,8 @@ fn processors_marker_path<V: VersionInfo>(version: &V) -> PathBuf {
         ))
 }
 
-/// Lit les JSONs directement depuis le JAR sans extraction sur disque
+/// Reads `install_profile.json` and `version.json` directly from the
+/// installer JAR without extracting anything to disk.
 async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaData, NeoForgeVersionMeta)> {
     let path = installer_path.clone();
 
@@ -286,7 +294,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
             message: format!("Failed to open ZIP archive: {}", e)
         })?;
 
-        // Lire install_profile.json
+        // Read install_profile.json
         let install_profile = {
             let mut file = archive.by_name("install_profile.json").map_err(|_| {
                 QueryError::MissingField {
@@ -302,7 +310,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
             serde_json::from_str::<NeoForgeMetaData>(&contents)?
         };
 
-        // Lire version.json
+        // Read version.json
         let version_meta = {
             let mut file = archive.by_name("version.json").map_err(|_| {
                 QueryError::MissingField {
@@ -326,7 +334,7 @@ async fn read_jsons_from_jar(installer_path: &PathBuf) -> Result<(NeoForgeMetaDa
     })?
 }
 
-/// Récupère le SHA1 attendu depuis Maven
+/// Fetches the expected SHA1 of a Maven artifact from its `.sha1` sibling.
 async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     let sha1_url = format!("{}.sha1", jar_url);
 
@@ -341,7 +349,7 @@ async fn fetch_maven_sha1(jar_url: &str) -> Option<String> {
     }
 }
 
-/// Vérifie le SHA1 de l'installer
+/// Verifies the local installer JAR matches the expected SHA1 from Maven.
 async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) -> Result<bool> {
     let expected_sha1 = fetch_maven_sha1(installer_url)
         .await
@@ -355,8 +363,10 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
         })
 }
 
-/// Exécute les processors pour une installation NeoForge
-/// Cette fonction doit être appelée après que les libraries sont téléchargées
+/// Runs the NeoForge install processors.
+///
+/// Must be called after all libraries (including the runtime classpath
+/// and the processor-only dependencies) have been downloaded.
 pub async fn run_install_processors<V: VersionInfo>(
     version: &V,
     install_profile: &NeoForgeMetaData,
@@ -390,7 +400,7 @@ pub async fn run_install_processors<V: VersionInfo>(
         }
     }
 
-    // Exécuter les processors
+    // Run the processors
     patcher::run_processors(version, install_profile, installer_path).await?;
     
     if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {

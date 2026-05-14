@@ -325,7 +325,7 @@ All components are thread-safe:
 
 ```toml
 [dependencies]
-lighty-loaders = { version = "0.8.6", features = ["vanilla", "fabric"] }
+lighty-loaders = { version = "26.5.1", features = ["vanilla", "fabric"] }
 ```
 
 **Available**:
