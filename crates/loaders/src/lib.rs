@@ -10,10 +10,20 @@ pub mod loaders;
 pub mod utils;
 pub mod types;
 
-// Re-export commonly used items
-pub use loaders::{
-    fabric, forge, lighty_updater, neoforge, optifine, quilt, vanilla,
-};
+// Re-export commonly used items (each gated on its feature)
+#[cfg(feature = "fabric")]
+pub use loaders::fabric;
+#[cfg(feature = "forge")]
+pub use loaders::forge;
+#[cfg(feature = "lighty_updater")]
+pub use loaders::lighty_updater;
+#[cfg(feature = "neoforge")]
+pub use loaders::neoforge;
+pub use loaders::optifine;
+#[cfg(feature = "quilt")]
+pub use loaders::quilt;
+#[cfg(feature = "vanilla")]
+pub use loaders::vanilla;
 
 pub use utils::{
     cache, error, manifest, query,

@@ -88,6 +88,13 @@ pub struct Artifact {
 // ============= VERSION.JSON =============
 
 /// `version.json` — runtime classpath/main-class/arguments layout.
+///
+/// `arguments` and `minecraft_arguments` are both optional because the
+/// version.json schema changed across eras:
+/// - 1.13+ ships a structured `arguments` object.
+/// - Back-ported modern installers for 1.12.2 (e.g. Forge 14.23.5.2860)
+///   keep the legacy single-string `minecraftArguments` even though the
+///   surrounding install_profile is the modern schema.
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 pub struct ForgeVersionManifest {
@@ -101,7 +108,10 @@ pub struct ForgeVersionManifest {
     pub main_class: String,
     #[serde(rename = "inheritsFrom")]
     pub inherits_from: String,
-    pub arguments: ForgeArguments,
+    #[serde(default)]
+    pub arguments: Option<ForgeArguments>,
+    #[serde(rename = "minecraftArguments", default)]
+    pub minecraft_arguments: Option<String>,
     pub libraries: Vec<ForgeLibrary>,
 }
 

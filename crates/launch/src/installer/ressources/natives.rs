@@ -13,8 +13,8 @@ use futures::future::try_join_all;
 use futures_util::io;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use crate::errors::{InstallerError, InstallerResult};
-use super::verifier::needs_download;
-use super::downloader::download_with_concurrency_limit;
+use crate::installer::verifier::needs_download;
+use crate::installer::downloader::download_with_concurrency_limit;
 
 #[cfg(feature = "events")]
 use super::downloader::DownloadProgressKind;

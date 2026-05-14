@@ -169,7 +169,10 @@ quilt = ["lighty-loaders/quilt"]
 neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
 # lighty-launch is enabled so the installer can run Forge post-install processors
 forge = ["lighty-loaders/forge", "lighty-launch/forge"]
-forge_legacy = ["lighty-loaders/forge_legacy"]
+# Legacy Forge (1.4 → 1.12.2) ships inside the same `forge` feature — no
+# extra dependencies are needed because the legacy era has no post-install
+# processors. This alias exists for example targets that opt in by name.
+forge_legacy = ["forge"]
 lighty_updater = ["lighty-loaders/lighty_updater"]
 all-loaders = ["lighty-loaders/all-loaders"]
 
@@ -249,7 +252,7 @@ required-features = ["forge", "tracing"]
 
 [[example]]
 name = "forge_legacy"
-required-features = ["forge_legacy", "tracing"]
+required-features = ["forge", "events", "tracing"]
 
 [[example]]
 name = "lighty_updater"

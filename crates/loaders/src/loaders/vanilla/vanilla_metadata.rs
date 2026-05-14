@@ -128,7 +128,7 @@ pub struct Artifact {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Rule {
     pub action: String,
     #[serde(default)]
@@ -137,7 +137,7 @@ pub struct Rule {
     pub features: Option<std::collections::HashMap<String, bool>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RuleOS {
     pub name: Option<String>,
     pub arch: Option<String>,

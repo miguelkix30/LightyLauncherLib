@@ -1,43 +1,50 @@
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use lighty_auth::UserProfile;
+use lighty_core::time_it;
+#[cfg(feature = "events")]
+use lighty_event::EventBus;
 #[cfg(not(feature = "events"))]
 use lighty_java::JreError;
-use lighty_core::time_it;
-use lighty_java::jre_downloader::jre_download;
 use lighty_java::JavaDistribution;
-use lighty_loaders::types::version_metadata::Version;
+use lighty_java::jre_downloader::{find_java_binary, jre_download};
+use lighty_java::runtime::JavaRuntime;
+use lighty_loaders::types::version_metadata::{Version, VersionMetaData};
+use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo};
+
+use crate::arguments::{Arguments, KEY_GAME_DIRECTORY};
 use crate::errors::{InstallerError, InstallerResult};
 use crate::installer::Installer;
-use super::builder::LaunchBuilder;
-use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo};
-use lighty_auth::UserProfile;
-use std::sync::Arc;
-use std::path::PathBuf;
-use lighty_loaders::types::version_metadata::VersionMetaData;
-use lighty_java::jre_downloader::find_java_binary;
-use lighty_java::runtime::JavaRuntime;
-use crate::arguments::{Arguments, KEY_GAME_DIRECTORY};
-use std::collections::{HashMap,HashSet};
+
 use lighty_core::hosts::{build_fallback_urls, HTTP_CLIENT as CLIENT};
 use lighty_core::verify_file_sha1;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 
 #[cfg(any(feature = "neoforge", feature = "forge"))]
-use crate::installer::libraries::{collect_library_tasks, download_libraries};
+use crate::installer::ressources::libraries::{collect_library_tasks, download_libraries};
+
+use super::builder::LaunchBuilder;
+
+#[cfg(feature = "forge")]
+use crate::installer::processors::forge_install::run_forge_install_processors;
+#[cfg(feature = "neoforge")]
+use crate::installer::processors::forge_install::run_neoforge_install_processors;
+
+#[cfg(feature = "forge")]
+use lighty_loaders::forge::forge::{
+    extract_install_profile_libraries_modern as forge_install_profile_libraries_modern,
+    ForgeRawData, FORGE,
+};
+#[cfg(feature = "forge")]
+use lighty_loaders::forge::forge_legacy::extract_universal_jar as forge_legacy_extract_universal_jar;
 #[cfg(feature = "neoforge")]
 use lighty_loaders::neoforge::neoforge::{
     extract_install_profile_libraries as neoforge_install_profile_libraries,
-    run_install_processors as neoforge_run_install_processors,
     NEOFORGE,
 };
-#[cfg(feature = "forge")]
-use lighty_loaders::forge::forge::{
-    extract_install_profile_libraries as forge_install_profile_libraries,
-    run_install_processors as forge_run_install_processors,
-    FORGE,
-};
-
-#[cfg(feature = "events")]
-use lighty_event::EventBus;
 
 /// Extension trait that adds [`Self::launch`] to any installable instance.
 ///
@@ -151,21 +158,42 @@ where
                 event_bus,
             )
             .await?;
-            neoforge_run_install_processors(version, install_profile.as_ref()).await?;
+            run_neoforge_install_processors(
+                version,
+                install_profile.as_ref(),
+                java_path.clone(),
+            )
+            .await?;
         }
 
         #[cfg(feature = "forge")]
         if matches!(version.loader(), Loader::Forge) {
-            let install_profile = FORGE.get_raw(version).await?;
-            let profile_libs = forge_install_profile_libraries(install_profile.as_ref());
-            let profile_tasks = collect_library_tasks(version, &profile_libs).await;
-            download_libraries(
-                profile_tasks,
-                #[cfg(feature = "events")]
-                event_bus,
-            )
-            .await?;
-            forge_run_install_processors(version, install_profile.as_ref()).await?;
+            let raw = FORGE.get_raw(version).await?;
+            match raw.as_ref() {
+                ForgeRawData::Modern { install_profile, .. } => {
+                    // Download processor-only libraries, then run processors.
+                    let profile_libs = forge_install_profile_libraries_modern(install_profile);
+                    let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+                    download_libraries(
+                        profile_tasks,
+                        #[cfg(feature = "events")]
+                        event_bus,
+                    )
+                    .await?;
+                    run_forge_install_processors(
+                        version,
+                        install_profile,
+                        java_path.clone(),
+                    )
+                    .await?;
+                }
+                ForgeRawData::Legacy(profile) => {
+                    // No processors in the legacy era; the universal JAR
+                    // ships inside the installer and must be extracted to
+                    // its Maven path so the classpath entry resolves.
+                    forge_legacy_extract_universal_jar(version, profile).await?;
+                }
+            }
         }
 
         // 4. Launch the game

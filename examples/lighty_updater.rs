@@ -1,5 +1,4 @@
 use lighty_launcher::prelude::*;
-use lighty_java::JreError;
 
 const QUALIFIER: &str = "fr";
 const ORGANIZATION: &str = ".LightyLauncher";

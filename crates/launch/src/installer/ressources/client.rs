@@ -6,8 +6,8 @@
 use lighty_loaders::types::{VersionInfo, version_metadata::Client};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
-use super::verifier::needs_download;
-use super::downloader::download_large_file;
+use crate::installer::verifier::needs_download;
+use crate::installer::downloader::download_large_file;
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;

@@ -3,25 +3,24 @@ use once_cell::sync::Lazy;
 use std::{collections::HashMap, fs::File, io::Read, path::PathBuf};
 use zip::ZipArchive;
 
-use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
-use crate::utils::forge_processor::run_processors;
+use lighty_core::download::download_file_untracked;
+use lighty_core::mkdir;
+
+use crate::loaders::vanilla::vanilla::VanillaQuery;
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
+use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
 use crate::utils::maven::fetch_maven_sha1;
 use crate::utils::{error::QueryError, manifest::ManifestRepository, query::Query};
 
-/// Maven repository for NeoForge artifacts. Passed to the shared
-/// install-processor executor so it knows where to pull processor JARs.
-const NEOFORGE_MAVEN: &str = "https://maven.neoforged.net/releases";
+/// Maven repository for NeoForge artifacts. Published so the launch crate
+/// can configure the install-processor pipeline against the right Maven.
+pub const NEOFORGE_MAVEN: &str = "https://maven.neoforged.net/releases";
 /// Subdirectory under `libraries/` used to cache files extracted from the
 /// NeoForge installer JAR (keeps Forge / NeoForge extracts isolated).
-const NEOFORGE_EXTRACT_SUBDIR: &str = "net/neoforged";
+/// Published for the install-processor pipeline.
+pub const NEOFORGE_EXTRACT_SUBDIR: &str = "net/neoforged";
 
-use crate::loaders::vanilla::vanilla::VanillaQuery;
-
-use lighty_core::download::download_file_untracked;
-
-use lighty_core::mkdir;
 pub type Result<T> = std::result::Result<T, QueryError>;
 
 /// Shared cached repository for NeoForge manifests.
@@ -220,10 +219,16 @@ fn extract_main_class(version_meta: &ForgeVersionManifest) -> MainClass {
 }
 
 fn extract_arguments(version_meta: &ForgeVersionManifest) -> Arguments {
-    Arguments {
-        game: version_meta.arguments.game.clone(),
-        jvm: Some(version_meta.arguments.jvm.clone()),
+    // NeoForge always ships the structured `arguments` block; the
+    // `Option` here is forced by the shared `ForgeVersionManifest`
+    // schema (which also serves back-ported modern Forge installers).
+    if let Some(args) = &version_meta.arguments {
+        return Arguments {
+            game: args.game.clone(),
+            jvm: Some(args.jvm.clone()),
+        };
     }
+    Arguments { game: Vec::new(), jvm: None }
 }
 
 /// Returns the install_profile.json libraries as the launcher's pivot
@@ -267,31 +272,42 @@ fn is_old_neoforge<V: VersionInfo>(version: &V) -> bool {
         .unwrap_or(false)
 }
 
-fn build_installer_url<V: VersionInfo>(version: &V) -> String {
+/// Builds the Maven URL of the NeoForge installer JAR for `version`.
+///
+/// Exposed so the launch crate can derive the SHA1-sidecar URL when it
+/// drives the install-processor pipeline.
+pub fn build_installer_url<V: VersionInfo>(version: &V) -> String {
     if is_old_neoforge(version) {
         let path_version = format!("{}-{}", version.minecraft_version(), version.loader_version());
         let file_prefix = format!("forge-{}", version.minecraft_version());
         format!(
-            "https://maven.neoforged.net/releases/net/neoforged/forge/{}/{}-{}-installer.jar",
-            path_version, file_prefix, version.loader_version()
+            "{}/{}/forge/{}/{}-{}-installer.jar",
+            NEOFORGE_MAVEN,
+            NEOFORGE_EXTRACT_SUBDIR,
+            path_version,
+            file_prefix,
+            version.loader_version()
         )
     } else {
         format!(
-            "https://maven.neoforged.net/releases/net/neoforged/neoforge/{}/neoforge-{}-installer.jar",
-            version.loader_version(), version.loader_version()
+            "{}/{}/neoforge/{}/neoforge-{}-installer.jar",
+            NEOFORGE_MAVEN,
+            NEOFORGE_EXTRACT_SUBDIR,
+            version.loader_version(),
+            version.loader_version()
         )
     }
 }
 
-fn processors_marker_path<V: VersionInfo>(version: &V) -> PathBuf {
+/// Returns the on-disk path where the NeoForge installer is cached.
+///
+/// Exposed so the launch crate can locate the cached installer when it
+/// drives the install-processor pipeline.
+pub fn installer_cache_path<V: VersionInfo>(version: &V) -> PathBuf {
     version
         .game_dirs()
         .join(".neoforge")
-        .join(format!(
-            "processors-{}-{}.sha1",
-            version.minecraft_version(),
-            version.loader_version()
-        ))
+        .join(format!("neoforge-{}-installer.jar", version.loader_version()))
 }
 
 /// Reads `install_profile.json` and `version.json` directly from the
@@ -362,65 +378,3 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
         })
 }
 
-/// Runs the NeoForge install processors.
-///
-/// The caller must have already downloaded the install_profile libraries
-/// (via the generic library installer pipeline) so the processor JARs
-/// and their classpath dependencies are on disk before this is invoked.
-pub async fn run_install_processors<V: VersionInfo>(
-    version: &V,
-    install_profile: &ForgeInstallProfile,
-) -> Result<()> {
-    lighty_core::trace_info!(loader = "neoforge", "Checking if processors need to run");
-
-    let profiles_dir = version.game_dirs().join(".neoforge");
-    mkdir!(profiles_dir);
-    let installer_path = profiles_dir.join(format!(
-        "neoforge-{}-installer.jar",
-        version.loader_version(),
-    ));
-
-    if !installer_path.exists() {
-        return Err(QueryError::Conversion {
-            message: "Installer JAR not found. Run fetch_full_data first.".to_string(),
-        });
-    }
-
-    let installer_url = build_installer_url(version);
-    let marker_path = processors_marker_path(version);
-    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
-        if let Ok(existing) = std::fs::read_to_string(&marker_path) {
-            if existing.trim() == expected_sha1 {
-                lighty_core::trace_info!(
-                    loader = "neoforge",
-                    "Processors already executed for this installer, skipping"
-                );
-                return Ok(());
-            }
-        }
-    }
-
-    // Run the processors using the shared executor with NeoForge's
-    // maven URL and extract subdirectory.
-    run_processors(
-        version,
-        install_profile,
-        installer_path,
-        NEOFORGE_MAVEN,
-        NEOFORGE_EXTRACT_SUBDIR,
-    )
-    .await?;
-    
-    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
-        if let Err(_err) = std::fs::write(&marker_path, expected_sha1) {
-            lighty_core::trace_warn!(
-                error = %_err,
-                loader = "neoforge",
-                "Failed to write processors marker file"
-            );
-        }
-    }
-
-    lighty_core::trace_info!(loader = "neoforge", "Processors completed successfully");
-    Ok(())
-}

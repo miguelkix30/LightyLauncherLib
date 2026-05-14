@@ -1389,6 +1389,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "windows",
+ "zip",
 ]
 
 [[package]]

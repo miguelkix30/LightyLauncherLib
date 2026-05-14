@@ -6,8 +6,8 @@
 use lighty_loaders::types::{VersionInfo, version_metadata::Mods};
 use lighty_core::time_it;
 use crate::errors::InstallerResult;
-use super::verifier::needs_download;
-use super::downloader::download_with_concurrency_limit;
+use crate::installer::verifier::needs_download;
+use crate::installer::downloader::download_with_concurrency_limit;
 
 #[cfg(feature = "events")]
 use super::downloader::DownloadProgressKind;

@@ -18,6 +18,12 @@ pub type Result<T> = std::result::Result<T, QueryError>;
 
 const CLIENT_NAME: &str = "client";
 
+/// Mojang's top-level version manifest (lists every released MC version).
+const PISTON_META_MANIFEST_URL: &str =
+    "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+/// Base URL for the asset CDN — assets live at `{prefix2}/{hash}`.
+const MINECRAFT_RESOURCES: &str = "https://resources.download.minecraft.net";
+
 /// Shared cached repository for Mojang's vanilla manifests.
 pub static VANILLA: Lazy<ManifestRepository<VanillaQuery>> = Lazy::new(|| ManifestRepository::new());
 
@@ -68,10 +74,9 @@ impl Query for VanillaQuery {
     // }
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<VanillaMetaData> {
-        let manifest_url = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
-        lighty_core::trace_info!("Fetching manifest from {}", manifest_url);
+        lighty_core::trace_info!("Fetching manifest from {}", PISTON_META_MANIFEST_URL);
 
-        let manifest: PistonMetaManifest = fetch_json_with_fallback(manifest_url).await?;
+        let manifest: PistonMetaManifest = fetch_json_with_fallback(manifest_url).await?.json().await?;
 
         let version_info = manifest
             .versions
@@ -234,7 +239,7 @@ fn extract_natives(full_data: &VanillaMetaData) -> Result<Vec<Native>> {
 }
 
 /// Returns whether the library's `rules` allow using it on the current OS.
-fn should_apply_rules(rules: &[Rule], os_name: &str) -> bool {
+pub(crate) fn should_apply_rules(rules: &[Rule], os_name: &str) -> bool {
     let mut allowed = false;
 
     for rule in rules {
@@ -347,7 +352,8 @@ async fn extract_assets<V: VersionInfo>(version: &V, full_data: &VanillaMetaData
         .into_iter()
         .map(|(k, v)| {
             let url = Some(format!(
-                "https://resources.download.minecraft.net/{}/{}",
+                "{}/{}/{}",
+                MINECRAFT_RESOURCES,
                 &v.hash[0..2],
                 v.hash
             ));

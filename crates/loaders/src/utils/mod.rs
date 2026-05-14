@@ -13,5 +13,3 @@ pub mod query;
 pub mod maven;
 #[cfg(any(feature = "neoforge", feature = "forge"))]
 pub mod forge_installer;
-#[cfg(any(feature = "neoforge", feature = "forge"))]
-pub mod forge_processor;

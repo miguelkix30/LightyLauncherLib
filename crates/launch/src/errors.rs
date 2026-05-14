@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-/// Erreurs possibles lors de l'installation
+/// Errors raised by the installer pipeline.
 #[derive(Debug, Error)]
 pub enum InstallerError {
     #[error("IO error: {0}")]

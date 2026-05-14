@@ -1,15 +1,22 @@
-//! Forge loader (Minecraft 1.13+).
+//! Forge loader (Minecraft 1.4.x onwards).
 //!
-//! Installer model is the same as NeoForge (same `install_profile.json` +
-//! `version.json` shape, same processor pipeline). The differences are
-//! routed through configuration:
-//! - Installer URLs live on `maven.minecraftforge.net`
-//! - Processor JARs are fetched from the same Maven base
-//! - Cached extracts are scoped to `net/minecraftforge/` (so they don't
-//!   collide with NeoForge's `net/neoforged/` extracts)
+//! Two installer eras live behind a single [`Loader::Forge`](crate::types::Loader::Forge):
 //!
-//! Legacy Forge (≤ 1.12.2) uses a completely different installer format
-//! and is handled by the separate `forge_legacy` loader.
+//! - **Modern (≥ 1.13)**: `install_profile.json` + separate `version.json`
+//!   + processor pipeline. Same shape as NeoForge (which forked Forge in
+//!   2023). Implemented inline in this file.
+//! - **Legacy (1.4 → 1.12.2)**: single `install_profile.json` with an
+//!   embedded `versionInfo` block, no processors, universal JAR ships
+//!   inside the installer ZIP. Implemented in [`super::forge_legacy`].
+//!
+//! Dispatch happens in [`ForgeQuery`] / [`ForgeRawData`]: the era is
+//! resolved from the Minecraft version and downstream code (this file,
+//! [`super::forge_legacy`], the launch runner) branches on the
+//! [`ForgeRawData`] variant.
+//!
+//! Modern installer URLs and cached extracts live on
+//! `maven.minecraftforge.net`, under `net/minecraftforge/`, which is
+//! distinct from NeoForge's `net/neoforged/` so the two never collide.
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -23,108 +30,110 @@ use crate::loaders::vanilla::vanilla::VanillaQuery;
 use crate::types::version_metadata::{Arguments, Library, MainClass, Version, VersionMetaData};
 use crate::types::VersionInfo;
 use crate::utils::forge_installer::{ForgeInstallProfile, ForgeVersionManifest};
-use crate::utils::forge_processor::{extract_maven_bundle_to_libraries, run_processors};
 use crate::utils::maven::fetch_maven_sha1;
 use crate::utils::{error::QueryError, manifest::ManifestRepository, query::Query};
 
-/// Maven repository for Forge artifacts.
-const FORGE_MAVEN: &str = "https://maven.minecraftforge.net";
+use super::forge_legacy::{self, is_legacy_forge, InstallProfileKind};
+use super::forge_legacy_metadata::ForgeLegacyInstallProfile;
+
+/// Maven repository for Forge artifacts. Published so the launch crate
+/// can configure the install-processor pipeline against the right Maven.
+pub const FORGE_MAVEN: &str = "https://maven.minecraftforge.net";
 /// Subdirectory under `libraries/` used to cache files extracted from the
-/// Forge installer JAR.
-const FORGE_EXTRACT_SUBDIR: &str = "net/minecraftforge";
+/// Forge installer JAR. Published for the install-processor pipeline.
+pub const FORGE_EXTRACT_SUBDIR: &str = "net/minecraftforge";
 
 pub type Result<T> = std::result::Result<T, QueryError>;
 
-/// Shared cached repository for Forge manifests.
+/// Shared cached repository for Forge manifests (covers both eras).
 pub static FORGE: Lazy<ManifestRepository<ForgeQuery>> =
     Lazy::new(|| ManifestRepository::new());
 
 /// Sub-queries supported by the Forge loader.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ForgeQuery {
-    /// Library list from `install_profile.json` (processor-only libraries).
+    /// Library list from the installer.
+    /// - Modern: processor-only libraries from `install_profile.json`
+    /// - Legacy: runtime libraries from `versionInfo.libraries`
     Libraries,
     /// Full merged [`Version`] for a Forge instance.
     ForgeBuilder,
+}
+
+/// Raw installer data — dispatched on the Minecraft version.
+///
+/// Both variants share the same [`FORGE`] cache; downstream code (this
+/// file's `Query` impl, the launch runner) branches on the variant
+/// when it needs to do something era-specific (run processors vs
+/// extract the universal JAR).
+#[derive(Debug, Clone)]
+pub enum ForgeRawData {
+    /// Modern Forge installer (≥ 1.13): `install_profile.json` +
+    /// separate `version.json` + processors.
+    Modern {
+        install_profile: ForgeInstallProfile,
+        version_manifest: ForgeVersionManifest,
+    },
+    /// Legacy Forge installer (1.4 → 1.12.2): single
+    /// `install_profile.json` with embedded `versionInfo`.
+    Legacy(ForgeLegacyInstallProfile),
 }
 
 #[async_trait]
 impl Query for ForgeQuery {
     type Query = ForgeQuery;
     type Data = VersionMetaData;
-    type Raw = ForgeInstallProfile;
+    type Raw = ForgeRawData;
 
     fn name() -> &'static str {
         "forge"
     }
 
-    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<ForgeInstallProfile> {
-        let installer_url = build_installer_url(version);
-        lighty_core::trace_debug!(url = %installer_url, loader = "forge", "Installer URL constructed");
-
-        let profiles_dir = version.game_dirs().join(".forge");
-        mkdir!(profiles_dir);
-
-        let installer_path = profiles_dir.join(format!(
-            "forge-{}-installer.jar",
-            version.loader_version()
-        ));
-
-        // Verify cached installer and re-download if needed
-        let needs_download = if installer_path.exists() {
-            match verify_installer_sha1(&installer_path, &installer_url).await {
-                Ok(true) => {
-                    lighty_core::trace_info!(loader = "forge", "Installer already exists and SHA1 is valid");
-                    false
-                }
-                Ok(false) => {
-                    lighty_core::trace_warn!(loader = "forge", "Installer exists but SHA1 mismatch, re-downloading");
-                    true
-                }
-                Err(_e) => {
-                    lighty_core::trace_warn!(error = %_e, loader = "forge", "Could not verify SHA1, using existing file");
-                    false
-                }
-            }
-        } else {
-            true
-        };
-
-        if needs_download {
-            lighty_core::trace_info!(path = ?installer_path, loader = "forge", "Downloading installer");
-            download_file_untracked(&installer_url, &installer_path)
-                .await
-                .map_err(|e| QueryError::Conversion {
-                    message: format!("Failed to download installer: {}", e),
-                })?;
-
-            if let Ok(valid) = verify_installer_sha1(&installer_path, &installer_url).await {
-                if !valid {
-                    return Err(QueryError::Conversion {
-                        message: "Downloaded installer has invalid SHA1".to_string(),
-                    });
-                }
-            }
+    async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<ForgeRawData> {
+        // MC ≥ 1.13: always modern installer, standard URL pattern.
+        if !is_legacy_forge(version.minecraft_version()) {
+            return fetch_modern_install_data(version).await;
         }
 
-        // Read the embedded JSONs directly from the installer JAR (no disk extraction)
-        let (install_profile, _) = read_jsons_from_jar(&installer_path).await?;
-
-        lighty_core::trace_info!(loader = "forge", "Successfully loaded Forge metadata");
-
-        Ok(install_profile)
+        // MC < 1.13: the installer URL pattern follows the legacy rules
+        // (1.7.x ships with a doubled MC suffix in the artifact name),
+        // but the install_profile.json inside may be either schema —
+        // late 1.12.2 builds (e.g. 14.23.5.2860) ship the modern schema.
+        // Download once with the legacy URL builder, then dispatch on
+        // the actual content.
+        let installer_path = forge_legacy::ensure_installer_cached(version).await?;
+        match forge_legacy::peek_install_profile_kind(&installer_path).await? {
+            InstallProfileKind::Legacy => {
+                let profile =
+                    forge_legacy::read_install_profile_from_jar(&installer_path).await?;
+                Ok(ForgeRawData::Legacy(profile))
+            }
+            InstallProfileKind::Modern => {
+                let (install_profile, version_manifest) =
+                    read_jsons_from_jar(&installer_path).await?;
+                Ok(ForgeRawData::Modern {
+                    install_profile,
+                    version_manifest,
+                })
+            }
+        }
     }
 
     async fn extract<V: VersionInfo>(
         version: &V,
         query: &Self::Query,
-        full_data: &ForgeInstallProfile,
+        full_data: &ForgeRawData,
     ) -> Result<Self::Data> {
-        let result = match query {
-            ForgeQuery::Libraries => {
-                VersionMetaData::Libraries(extract_install_profile_libraries(full_data))
+        let result = match (query, full_data) {
+            (ForgeQuery::Libraries, ForgeRawData::Modern { install_profile, .. }) => {
+                VersionMetaData::Libraries(extract_install_profile_libraries_modern(
+                    install_profile,
+                ))
             }
-            ForgeQuery::ForgeBuilder => {
+            (ForgeQuery::Libraries, ForgeRawData::Legacy(profile)) => {
+                VersionMetaData::Libraries(forge_legacy::extract_legacy_libraries(profile).await)
+            }
+            (ForgeQuery::ForgeBuilder, _) => {
                 VersionMetaData::Version(Self::version_builder(version, full_data).await?)
             }
         };
@@ -133,43 +142,126 @@ impl Query for ForgeQuery {
 
     async fn version_builder<V: VersionInfo>(
         version: &V,
-        _full_data: &ForgeInstallProfile,
+        full_data: &ForgeRawData,
     ) -> Result<Version> {
-        // Fetch Vanilla data and read version.json from the installer JAR in parallel
-        let (vanilla_builder, version_meta) = tokio::try_join!(
-            async {
-                let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
-                VanillaQuery::version_builder(version, &vanilla_data).await
-            },
-            async {
-                let profiles_dir = version.game_dirs().join(".forge");
-                let installer_path = profiles_dir.join(format!(
-                    "forge-{}-installer.jar",
-                    version.loader_version()
-                ));
-                let (_, version_meta) = read_jsons_from_jar(&installer_path).await?;
-                Ok::<_, QueryError>(version_meta)
+        match full_data {
+            ForgeRawData::Modern { version_manifest, .. } => {
+                modern_version_builder(version, version_manifest).await
             }
-        )?;
+            ForgeRawData::Legacy(profile) => {
+                forge_legacy::legacy_version_builder(version, profile).await
+            }
+        }
+    }
+}
 
-        // Use ONLY the runtime libraries from version.json (install_profile
-        // libraries are processor-only and must not end up on the classpath).
-        let version_json_libs = extract_libraries_from_version_meta(&version_meta);
+/// Modern installer fetch (≥ 1.13): downloads / verifies the installer
+/// JAR and reads both embedded JSONs.
+async fn fetch_modern_install_data<V: VersionInfo>(version: &V) -> Result<ForgeRawData> {
+    let installer_url = build_installer_url(version);
+    lighty_core::trace_debug!(url = %installer_url, loader = "forge", "Installer URL constructed");
 
-        // Merge: Vanilla base + version.json overrides
-        let merged_libs = merge_libraries(vanilla_builder.libraries, version_json_libs);
+    let profiles_dir = version.game_dirs().join(".forge");
+    mkdir!(profiles_dir);
 
-        Ok(Version {
-            main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(&version_meta)),
-            java_version: vanilla_builder.java_version,
-            arguments: merge_arguments(vanilla_builder.arguments, extract_arguments(&version_meta)),
-            libraries: merged_libs,
-            mods: None,
-            natives: vanilla_builder.natives,
-            client: vanilla_builder.client,
-            assets_index: vanilla_builder.assets_index,
-            assets: vanilla_builder.assets,
-        })
+    let installer_path = installer_cache_path(version);
+
+    // Verify cached installer and re-download if needed
+    let needs_download = if installer_path.exists() {
+        match verify_installer_sha1(&installer_path, &installer_url).await {
+            Ok(true) => {
+                lighty_core::trace_info!(loader = "forge", "Installer already exists and SHA1 is valid");
+                false
+            }
+            Ok(false) => {
+                lighty_core::trace_warn!(loader = "forge", "Installer exists but SHA1 mismatch, re-downloading");
+                true
+            }
+            Err(_e) => {
+                lighty_core::trace_warn!(error = %_e, loader = "forge", "Could not verify SHA1, using existing file");
+                false
+            }
+        }
+    } else {
+        true
+    };
+
+    if needs_download {
+        lighty_core::trace_info!(path = ?installer_path, loader = "forge", "Downloading installer");
+        download_file_untracked(&installer_url, &installer_path)
+            .await
+            .map_err(|e| QueryError::Conversion {
+                message: format!("Failed to download installer: {}", e),
+            })?;
+
+        if let Ok(valid) = verify_installer_sha1(&installer_path, &installer_url).await {
+            if !valid {
+                return Err(QueryError::Conversion {
+                    message: "Downloaded installer has invalid SHA1".to_string(),
+                });
+            }
+        }
+    }
+
+    // Read both JSONs from the installer JAR (no disk extraction).
+    let (install_profile, version_manifest) = read_jsons_from_jar(&installer_path).await?;
+
+    lighty_core::trace_info!(loader = "forge", "Successfully loaded modern Forge metadata");
+
+    Ok(ForgeRawData::Modern {
+        install_profile,
+        version_manifest,
+    })
+}
+
+/// Modern (≥ 1.13) `Version` builder — merges vanilla baseline with
+/// the Forge `version.json` overrides.
+async fn modern_version_builder<V: VersionInfo>(
+    version: &V,
+    version_meta: &ForgeVersionManifest,
+) -> Result<Version> {
+    let vanilla_data = VanillaQuery::fetch_full_data(version).await?;
+    let vanilla_builder = VanillaQuery::version_builder(version, &vanilla_data).await?;
+
+    // Use ONLY the runtime libraries from version.json (install_profile
+    // libraries are processor-only and must not end up on the classpath).
+    let version_json_libs = extract_libraries_from_version_meta(version_meta);
+
+    // Merge: Vanilla base + version.json overrides
+    let merged_libs = merge_libraries(vanilla_builder.libraries, version_json_libs);
+
+    // Back-ported modern installers (MC < 1.13 with the modern
+    // install_profile schema, e.g. Forge 14.23.5.2860 for 1.12.2)
+    // ship a `minecraftArguments` string that already includes the
+    // full game-args line — vanilla's `game` would duplicate flags
+    // like `--gameDir`. In that case Forge fully replaces vanilla.
+    let merged_arguments = if version_meta.minecraft_arguments.is_some() {
+        replace_game_keep_jvm(vanilla_builder.arguments, extract_arguments(version_meta))
+    } else {
+        merge_arguments(vanilla_builder.arguments, extract_arguments(version_meta))
+    };
+
+    Ok(Version {
+        main_class: merge_main_class(vanilla_builder.main_class, extract_main_class(version_meta)),
+        java_version: vanilla_builder.java_version,
+        arguments: merged_arguments,
+        libraries: merged_libs,
+        mods: None,
+        natives: vanilla_builder.natives,
+        client: vanilla_builder.client,
+        assets_index: vanilla_builder.assets_index,
+        assets: vanilla_builder.assets,
+    })
+}
+
+/// Replacement strategy for the back-ported modern era: Forge's
+/// `minecraftArguments` is a complete game-args line, so vanilla's
+/// `game` is discarded. JVM args are still inherited from vanilla
+/// because the back-ported version.json never carries any.
+fn replace_game_keep_jvm(vanilla: Arguments, forge: Arguments) -> Arguments {
+    Arguments {
+        game: forge.game,
+        jvm: vanilla.jvm,
     }
 }
 
@@ -238,20 +330,31 @@ fn extract_main_class(version_meta: &ForgeVersionManifest) -> MainClass {
 }
 
 fn extract_arguments(version_meta: &ForgeVersionManifest) -> Arguments {
-    Arguments {
-        game: version_meta.arguments.game.clone(),
-        jvm: Some(version_meta.arguments.jvm.clone()),
+    if let Some(args) = &version_meta.arguments {
+        return Arguments {
+            game: args.game.clone(),
+            jvm: Some(args.jvm.clone()),
+        };
     }
+    // Back-ported modern installers (e.g. Forge 14.23.5.2860 for MC
+    // 1.12.2) keep the legacy single-string `minecraftArguments`.
+    // JVM args are inherited from the vanilla manifest in that era.
+    let game = version_meta
+        .minecraft_arguments
+        .as_deref()
+        .map(|s| s.split_whitespace().map(String::from).collect())
+        .unwrap_or_default();
+    Arguments { game, jvm: None }
 }
 
-/// Returns the install_profile.json libraries as the launcher's pivot
-/// [`Library`] type so they can be fed through the generic library
-/// installer.
+/// Returns the install_profile.json libraries (modern era, ≥ 1.13) as
+/// the launcher's pivot [`Library`] type so they can be fed through
+/// the generic library installer.
 ///
 /// Includes both the processor JARs and the runtime-required artifacts
 /// (notably `net.minecraftforge:forge:VERSION:universal`, which is
 /// referenced at runtime by FML but absent from `version.json`).
-pub fn extract_install_profile_libraries(full_data: &ForgeInstallProfile) -> Vec<Library> {
+pub fn extract_install_profile_libraries_modern(full_data: &ForgeInstallProfile) -> Vec<Library> {
     full_data
         .libraries
         .iter()
@@ -280,7 +383,11 @@ fn extract_libraries_from_version_meta(version_meta: &ForgeVersionManifest) -> V
 }
 
 /// --------- Helpers ----------
-fn build_installer_url<V: VersionInfo>(version: &V) -> String {
+/// Builds the Maven URL of the modern Forge installer JAR for `version`.
+///
+/// Exposed so the launch crate can derive the SHA1-sidecar URL when it
+/// drives the install-processor pipeline.
+pub fn build_installer_url<V: VersionInfo>(version: &V) -> String {
     format!(
         "{}/net/minecraftforge/forge/{}-{}/forge-{}-{}-installer.jar",
         FORGE_MAVEN,
@@ -291,12 +398,15 @@ fn build_installer_url<V: VersionInfo>(version: &V) -> String {
     )
 }
 
-fn processors_marker_path<V: VersionInfo>(version: &V) -> PathBuf {
-    version.game_dirs().join(".forge").join(format!(
-        "processors-{}-{}.sha1",
-        version.minecraft_version(),
-        version.loader_version()
-    ))
+/// Returns the on-disk path where the modern Forge installer is cached.
+///
+/// Same naming as legacy ([`super::forge_legacy::legacy_installer_path`])
+/// so both eras share one cached file. Exposed for the launch crate.
+pub fn installer_cache_path<V: VersionInfo>(version: &V) -> PathBuf {
+    version
+        .game_dirs()
+        .join(".forge")
+        .join(format!("forge-{}-installer.jar", version.loader_version()))
 }
 
 /// Reads `install_profile.json` and `version.json` directly from the
@@ -372,71 +482,3 @@ async fn verify_installer_sha1(installer_path: &PathBuf, installer_url: &str) ->
     })
 }
 
-/// Runs the Forge install processors.
-///
-/// The caller must have already downloaded the install_profile libraries
-/// (via the generic library installer pipeline) so the processor JARs
-/// and their classpath dependencies are on disk before this is invoked.
-pub async fn run_install_processors<V: VersionInfo>(
-    version: &V,
-    install_profile: &ForgeInstallProfile,
-) -> Result<()> {
-    lighty_core::trace_info!(loader = "forge", "Checking if processors need to run");
-
-    let profiles_dir = version.game_dirs().join(".forge");
-    mkdir!(profiles_dir);
-    let installer_path = profiles_dir.join(format!(
-        "forge-{}-installer.jar",
-        version.loader_version(),
-    ));
-
-    if !installer_path.exists() {
-        return Err(QueryError::Conversion {
-            message: "Installer JAR not found. Run fetch_full_data first.".to_string(),
-        });
-    }
-
-    // Extract artifacts bundled inside the installer JAR (Forge ships
-    // forge-shim.jar in 1.21+, forge.jar + forge-universal.jar in 1.14,
-    // etc. at `/maven/...`). Idempotent.
-    let libraries_dir = version.game_dirs().join("libraries");
-    extract_maven_bundle_to_libraries(&installer_path, &libraries_dir)?;
-
-    let installer_url = build_installer_url(version);
-    let marker_path = processors_marker_path(version);
-    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
-        if let Ok(existing) = std::fs::read_to_string(&marker_path) {
-            if existing.trim() == expected_sha1 {
-                lighty_core::trace_info!(
-                    loader = "forge",
-                    "Processors already executed for this installer, skipping"
-                );
-                return Ok(());
-            }
-        }
-    }
-
-    // Run the processors using the shared executor with Forge's
-    // maven URL and extract subdirectory.
-    run_processors(
-        version,
-        install_profile,
-        installer_path,
-        FORGE_MAVEN,
-        FORGE_EXTRACT_SUBDIR,
-    )
-    .await?;
-
-    if let Some(expected_sha1) = fetch_maven_sha1(&installer_url).await {
-        if let Err(_err) = std::fs::write(&marker_path, expected_sha1) {
-            lighty_core::trace_warn!(
-                error = %_err,
-                loader = "forge",
-                "Failed to write processors marker file"
-            );
-        }
-    }
-
-    lighty_core::trace_info!(loader = "forge", "Processors completed successfully");
-    Ok(())
-}

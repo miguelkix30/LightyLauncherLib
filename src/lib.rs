@@ -220,17 +220,23 @@ pub mod loaders {
                 Native,
             },
         },
-        loaders::{
-            vanilla,
-            fabric,
-            quilt,
-            forge,
-            neoforge,
-            lighty_updater,
-            optifine,
-        },
         utils::{cache, error, manifest, query},
     };
+
+    // Per-loader re-exports (gated on the matching feature)
+    #[cfg(feature = "vanilla")]
+    pub use lighty_loaders::loaders::vanilla;
+    #[cfg(feature = "fabric")]
+    pub use lighty_loaders::loaders::fabric;
+    #[cfg(feature = "quilt")]
+    pub use lighty_loaders::loaders::quilt;
+    #[cfg(feature = "forge")]
+    pub use lighty_loaders::loaders::forge;
+    #[cfg(feature = "neoforge")]
+    pub use lighty_loaders::loaders::neoforge;
+    #[cfg(feature = "lighty_updater")]
+    pub use lighty_loaders::loaders::lighty_updater;
+    pub use lighty_loaders::loaders::optifine;
 }
 
 // ============================================================================
