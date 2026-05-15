@@ -470,12 +470,36 @@ async fn execute_processor(context: &ProcessorContext, processor: &Processor) ->
         "Processor configuration prepared"
     );
 
-    let output = tokio::process::Command::new(&context.java_path)
-        .arg("-cp")
-        .arg(&classpath)
-        .arg(&main_class)
-        .args(&processed_args)
-        .current_dir(&context.game_dir)
+    // Build std::process::Command so we can apply Windows-specific creation flags
+    #[cfg(windows)]
+    let mut std_cmd = {
+        use std::process::Command as StdCommand;
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut c = StdCommand::new(&context.java_path);
+        c.arg("-cp");
+        c.arg(&classpath);
+        c.arg(&main_class);
+        c.args(&processed_args);
+        c.current_dir(&context.game_dir);
+        c.creation_flags(CREATE_NO_WINDOW);
+        c
+    };
+
+    #[cfg(not(windows))]
+    let mut std_cmd = {
+        use std::process::Command as StdCommand;
+        let mut c = StdCommand::new(&context.java_path);
+        c.arg("-cp");
+        c.arg(&classpath);
+        c.arg(&main_class);
+        c.args(&processed_args);
+        c.current_dir(&context.game_dir);
+        c
+    };
+
+    let output = tokio::process::Command::from(std_cmd)
         .output()
         .await
         .map_err(|e| QueryError::Conversion {

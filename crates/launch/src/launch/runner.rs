@@ -339,7 +339,28 @@ async fn validate_java_binary(path: &std::path::Path) -> bool {
 
     // Try to execute the binary with `-version` and consider it valid when the
     // process exits successfully and emits some output (stdout or stderr).
-    let cmd = Command::new(path).arg("-version").output();
+    // Build a platform-aware command to avoid flashing a console on Windows
+    #[cfg(windows)]
+    let mut std_cmd = {
+        use std::process::Command as StdCommand;
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let mut c = StdCommand::new(path);
+        c.arg("-version");
+        c.creation_flags(CREATE_NO_WINDOW);
+        c
+    };
+
+    #[cfg(not(windows))]
+    let mut std_cmd = {
+        use std::process::Command as StdCommand;
+        let mut c = StdCommand::new(path);
+        c.arg("-version");
+        c
+    };
+
+    let cmd = Command::from(std_cmd).output();
 
     match timeout(Duration::from_millis(TIMEOUT_MS), cmd).await {
         Ok(Ok(output)) => {

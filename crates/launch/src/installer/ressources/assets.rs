@@ -10,7 +10,7 @@ use crate::installer::verifier::needs_download;
 use crate::installer::downloader::download_small_with_concurrency_limit;
 
 #[cfg(feature = "events")]
-use super::downloader::DownloadProgressKind;
+use super::super::downloader::DownloadProgressKind;
 
 #[cfg(feature = "events")]
 use lighty_event::EventBus;

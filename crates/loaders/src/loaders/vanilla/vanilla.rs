@@ -76,7 +76,7 @@ impl Query for VanillaQuery {
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<VanillaMetaData> {
         lighty_core::trace_info!("Fetching manifest from {}", PISTON_META_MANIFEST_URL);
 
-        let manifest: PistonMetaManifest = fetch_json_with_fallback(manifest_url).await?.json().await?;
+        let manifest: PistonMetaManifest = fetch_json_with_fallback(PISTON_META_MANIFEST_URL).await?;
 
         let version_info = manifest
             .versions
