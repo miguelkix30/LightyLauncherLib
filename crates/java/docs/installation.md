@@ -63,8 +63,8 @@ tokio::spawn(async move {
                 JavaEvent::JavaDownloadStarted { distribution, version, total_bytes } => {
                     println!("Downloading {} {} ({} MB)", distribution, version, total_bytes / 1_000_000);
                 }
-                JavaEvent::JavaDownloadProgress { bytes } => {
-                    print!("\r{} MB", bytes / 1_000_000);
+                JavaEvent::JavaDownloadProgress { percent } => {
+                    print!("\r{:.1}%", percent);
                 }
                 JavaEvent::JavaDownloadCompleted { .. } => {
                     println!("\nDownload complete");

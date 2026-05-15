@@ -81,8 +81,8 @@ async fn main() -> anyhow::Result<()> {
                 Event::Java(JavaEvent::JavaDownloadStarted { distribution, version, total_bytes }) => {
                     trace_info!("[Java] Downloading {} {} ({} MB)", distribution, version, total_bytes / 1_000_000);
                 }
-                Event::Java(JavaEvent::JavaDownloadProgress { bytes }) => {
-                    print!("\r[Java] Download progress: {} MB", bytes / 1_000_000);
+                Event::Java(JavaEvent::JavaDownloadProgress { percent }) => {
+                    print!("\r[Java] Download progress: {:.1}%", percent);
                     std::io::Write::flush(&mut std::io::stdout()).ok();
                 }
                 Event::Java(JavaEvent::JavaDownloadCompleted { distribution, version }) => {

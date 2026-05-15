@@ -28,7 +28,7 @@ pub enum JavaEvent {
     },
     /// JRE download progress
     JavaDownloadProgress {
-        bytes: u64,
+        percent: f32,
     },
     /// JRE download completed
     JavaDownloadCompleted {

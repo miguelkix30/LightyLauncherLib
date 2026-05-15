@@ -11,9 +11,11 @@ use std::path::{Path, PathBuf};
 use crate::errors::{JreError, JreResult};
 use path_absolutize::Absolutize;
 use tokio::fs;
+use tokio::time::{sleep, Duration};
 
 use lighty_core::system::{OperatingSystem, OS};
 use lighty_core::download::download_file;
+use lighty_core::DownloadError;
 use lighty_core::extract::{tar_gz_extract, zip_extract};
 
 use super::JavaDistribution;
@@ -84,8 +86,8 @@ where
 
     let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
 
-    // Clean existing installation
-    prepare_installation_directory(&runtime_dir).await?;
+    // Clean existing installation (retry on transient IO errors)
+    prepare_installation_directory_with_retry(&runtime_dir).await?;
 
     let download_urls = build_download_candidates(&effective_distribution, version)
         .await
@@ -95,6 +97,7 @@ where
         .ok_or_else(|| JreError::Download("No download URLs available".to_string()))?;
 
     // Emit JavaDownloadStarted event
+    let mut expected_total_bytes = 0;
     if let Some(bus) = event_bus {
         // Get total bytes first
         let response = lighty_core::hosts::HTTP_CLIENT
@@ -116,6 +119,8 @@ where
             0
         };
 
+        expected_total_bytes = total_bytes;
+
         bus.emit(Event::Java(JavaEvent::JavaDownloadStarted {
             distribution: effective_distribution.get_name().to_string(),
             version: *version,
@@ -126,46 +131,31 @@ where
     // Download JRE archive with progress tracking
     let archive_bytes = {
         let event_bus_ref = event_bus;
-        let mut last_error = None;
-        let mut downloaded = None;
+        let progress_cb = |current: u64, total: u64| {
+            on_progress(current, total);
 
-        for url in &download_urls {
-            let result = download_file(url, |current, _total| {
-                on_progress(current, _total);
-                if let Some(bus) = event_bus_ref {
-                    // Only emit progress for actual chunks (not initial 0)
-                    if current > 0 {
-                        bus.emit(Event::Java(JavaEvent::JavaDownloadProgress {
-                            bytes: current,
-                        }));
-                    }
-                }
-            })
-            .await;
+            if let Some(bus) = event_bus_ref {
+                if current > 0 {
+                    let effective_total = if total > 0 {
+                        total
+                    } else {
+                        expected_total_bytes
+                    };
+                    let percent = if effective_total > 0 {
+                        let raw = (current as f64 / effective_total as f64) * 100.0;
+                        raw.min(100.0)
+                    } else {
+                        0.0
+                    };
 
-            match result {
-                Ok(bytes) => {
-                    downloaded = Some(bytes);
-                    last_error = None;
-                    break;
-                }
-                Err(e) => {
-                    last_error = Some(e);
+                    bus.emit(Event::Java(JavaEvent::JavaDownloadProgress {
+                        percent: percent as f32,
+                    }));
                 }
             }
-        }
+        };
 
-        match downloaded {
-            Some(bytes) => bytes,
-            None => {
-                return Err(JreError::Download(format!(
-                    "Download failed: {}",
-                    last_error
-                        .map(|e| e.to_string())
-                        .unwrap_or_else(|| "No candidates available for download".to_string())
-                )));
-            }
-        }
+        download_with_retries(&download_urls, &progress_cb).await?
     };
 
     // Emit JavaDownloadCompleted event
@@ -233,8 +223,8 @@ where
 
     let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
 
-    // Clean existing installation
-    prepare_installation_directory(&runtime_dir).await?;
+    // Clean existing installation (retry on transient IO errors)
+    prepare_installation_directory_with_retry(&runtime_dir).await?;
 
     let download_urls = build_download_candidates(&effective_distribution, version)
         .await
@@ -242,33 +232,11 @@ where
 
     // Download JRE archive
     let archive_bytes = {
-        let mut last_error = None;
-        let mut downloaded = None;
+        let progress_cb = |current: u64, total: u64| {
+            on_progress(current, total);
+        };
 
-        for url in &download_urls {
-            match download_file(url, |current, total| on_progress(current, total)).await {
-                Ok(bytes) => {
-                    downloaded = Some(bytes);
-                    last_error = None;
-                    break;
-                }
-                Err(e) => {
-                    last_error = Some(e);
-                }
-            }
-        }
-
-        match downloaded {
-            Some(bytes) => bytes,
-            None => {
-                return Err(JreError::Download(format!(
-                    "Download failed: {}",
-                    last_error
-                        .map(|e| e.to_string())
-                        .unwrap_or_else(|| "No candidates available for download".to_string())
-                )));
-            }
-        }
+        download_with_retries(&download_urls, &progress_cb).await?
     };
 
     // Extract archive based on OS
@@ -326,6 +294,88 @@ async fn prepare_installation_directory(runtime_dir: &Path) -> JreResult<()> {
     }
     fs::create_dir_all(runtime_dir).await?;
     Ok(())
+}
+
+async fn prepare_installation_directory_with_retry(runtime_dir: &Path) -> JreResult<()> {
+    const MAX_IO_RETRIES: usize = 3;
+    const RETRY_DELAY_MS: u64 = 400;
+
+    let mut last_error: Option<JreError> = None;
+
+    for attempt in 1..=MAX_IO_RETRIES {
+        match prepare_installation_directory(runtime_dir).await {
+            Ok(()) => return Ok(()),
+            Err(JreError::Io(err))
+                if err.kind() == std::io::ErrorKind::PermissionDenied
+                    && attempt < MAX_IO_RETRIES =>
+            {
+                last_error = Some(JreError::Io(err));
+                lighty_core::trace_warn!(
+                    "[Java] Permission denied preparing {:?}, retrying ({}/{})",
+                    runtime_dir,
+                    attempt,
+                    MAX_IO_RETRIES
+                );
+                sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        JreError::Download("Failed to prepare runtime directory".to_string())
+    }))
+}
+
+async fn download_with_retries<F>(
+    download_urls: &[String],
+    on_progress: &F,
+) -> JreResult<Vec<u8>>
+where
+    F: Fn(u64, u64),
+{
+    const MAX_IO_RETRIES: usize = 3;
+    const RETRY_DELAY_MS: u64 = 400;
+
+    let mut last_error: Option<DownloadError> = None;
+
+    for url in download_urls {
+        for attempt in 1..=MAX_IO_RETRIES {
+            let result = download_file(url, |current, total| on_progress(current, total)).await;
+
+            match result {
+                Ok(bytes) => return Ok(bytes),
+                Err(err) => {
+                    let should_retry = matches!(
+                        err,
+                        DownloadError::Io(ref io) if io.kind() == std::io::ErrorKind::PermissionDenied
+                    );
+
+                    last_error = Some(err);
+
+                    if should_retry && attempt < MAX_IO_RETRIES {
+                        lighty_core::trace_warn!(
+                            "[Java] Permission denied downloading {}, retrying ({}/{})",
+                            url,
+                            attempt,
+                            MAX_IO_RETRIES
+                        );
+                        sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+                        continue;
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    Err(JreError::Download(format!(
+        "Download failed: {}",
+        last_error
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "No candidates available for download".to_string())
+    )))
 }
 
 /// Extracts the JRE archive based on the operating system (with events feature)

@@ -268,7 +268,7 @@ flowchart LR
 
 Events emitted during download:
 1. `JavaDownloadStarted` - Total bytes, distribution, version
-2. `JavaDownloadProgress` - Current bytes downloaded
+2. `JavaDownloadProgress` - Download progress percentage
 3. `JavaDownloadCompleted` - Distribution, version
 4. `JavaExtractionStarted` - Distribution, version
 5. `JavaExtractionProgress` - Files extracted, total files
