@@ -34,20 +34,10 @@ anyhow = "1.0"
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize AppState
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create instance
     let mut instance = VersionBuilder::new(
@@ -55,7 +45,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     // Authenticate

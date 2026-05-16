@@ -39,9 +39,6 @@ zip.workspace = true
 async_zip.workspace = true
 memmap2.workspace = true
 
-# Paths & Filenames
-directories.workspace = true
-
 # Utilities
 once_cell.workspace = true
 version-compare.workspace = true
@@ -53,5 +50,9 @@ quilt = ["vanilla"]
 neoforge = ["vanilla"]
 forge = ["vanilla"]
 lighty_updater = ["vanilla", "fabric", "quilt", "neoforge", "forge"]
-all-loaders = ["vanilla", "fabric", "quilt", "neoforge", "forge", "lighty_updater"]
+# Mod-source clients (Modrinth public API, CurseForge keyed API).
+modrinth = ["vanilla"]
+curseforge = ["vanilla"]
+all-mods = ["modrinth", "curseforge"]
+all-loaders = ["vanilla", "fabric", "quilt", "neoforge", "forge", "lighty_updater", "all-mods"]
 default = []

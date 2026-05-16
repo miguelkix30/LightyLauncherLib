@@ -6,7 +6,7 @@
 //! Generates a deterministic UUID v5 (SHA1-based) from the username.
 //! No token validation or verification.
 
-use crate::{Authenticator, AuthError, AuthResult, UserProfile, generate_offline_uuid};
+use crate::{Authenticator, AuthError, AuthProvider, AuthResult, UserProfile, generate_offline_uuid};
 
 #[cfg(feature = "events")]
 use lighty_event::{EventBus, Event, AuthEvent};
@@ -120,11 +120,13 @@ impl Authenticator for OfflineAuth {
             username: self.username.clone(),
             uuid,
             access_token: None,
+            xuid: None,
             email: None,
             email_verified: false,
             money: None,
             role: None,
             banned: false,
+            provider: AuthProvider::Offline,
         })
     }
 }

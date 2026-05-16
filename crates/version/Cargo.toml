@@ -34,9 +34,13 @@ thiserror.workspace = true
 # Logging
 tracing.workspace = true
 
-# Chemins & Noms de fichiers
-directories.workspace = true
-
 # Utilities
 once_cell.workspace = true
 version-compare.workspace = true
+
+[features]
+# Forward the mod-source feature gates so the matching `.with_modrinth(...)`
+# / `.with_curseforge(...)` sub-builder methods compile in.
+modrinth   = ["lighty-loaders/modrinth"]
+curseforge = ["lighty-loaders/curseforge"]
+default = []

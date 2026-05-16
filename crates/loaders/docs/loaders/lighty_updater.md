@@ -18,26 +18,14 @@ LightyUpdater allows you to define custom version metadata on your own server, p
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // LightyVersionBuilder for custom servers
     let instance = LightyVersionBuilder::new(
         "my-modpack",                    // Instance name
         "https://myserver.com/api",      // Server URL
-        "1.21.1",                        // Minecraft version
-        launcher_dir
     );
 
     let metadata = instance.get_metadata().await?;
@@ -56,7 +44,6 @@ let instance = VersionBuilder::new(
     Loader::LightyUpdater,
     "https://myserver.com/api",  // Server URL in loader_version field
     "1.21.1",
-    launcher_dir
 );
 ```
 

@@ -134,13 +134,30 @@ async fn extract_native(jar_path: PathBuf, natives_dir: PathBuf) -> InstallerRes
     Ok(())
 }
 
-/// Checks if a file is a native library
+/// Checks if a file is a native library.
+///
+/// Accepts the standard extensions (`.dll`, `.so`, `.dylib`, `.jnilib`)
+/// and Linux soname-versioned variants of the shape `*.so.N(.N)*` (e.g.
+/// `libfoo.so.1`, `libfoo.so.1.2.3`). What it must NOT match are the
+/// sidecar files LWJGL/Mojang ship alongside the native inside the JAR
+/// (`libglfw.so.sha1`, `libglfw.so.git`, `libglfw.so.md5`, …).
 #[inline]
 fn is_native_file(filename: &str) -> bool {
     const NATIVE_EXTENSIONS: &[&str] = &[".dll", ".so", ".dylib", ".jnilib"];
 
     let filename_lower = filename.to_lowercase();
 
-    NATIVE_EXTENSIONS.iter().any(|ext| filename_lower.ends_with(ext))
-        || filename_lower.contains(".so.")
+    if NATIVE_EXTENSIONS.iter().any(|ext| filename_lower.ends_with(ext)) {
+        return true;
+    }
+
+    // Versioned Linux libs: everything after the last `.so.` must be
+    // purely digits and dots (e.g. `1`, `1.2`, `1.2.3`). Anything else
+    // (`.sha1`, `.git`, `.md5`, …) is a sidecar, not a native.
+    if let Some(suffix) = filename_lower.rsplit_once(".so.").map(|(_, s)| s) {
+        return !suffix.is_empty()
+            && suffix.chars().all(|c| c.is_ascii_digit() || c == '.');
+    }
+
+    false
 }

@@ -161,7 +161,11 @@ impl<T: VersionInfo> Installer for T {
 /// Creates necessary installation directories
 async fn create_directories(version: &impl VersionInfo) {
     let parent_path = version.game_dirs().to_path_buf();
-    mkdir!(parent_path.join("runtime"));
+    // runtime_dir() is the single source for the JVM's `${game_directory}`.
+    // Default = game_dirs (no /runtime subfolder imposed); the runner may
+    // ré-écrire it via set_runtime_dir() to honour
+    // arg_overrides[KEY_GAME_DIRECTORY].
+    mkdir!(version.runtime_dir());
     mkdir!(parent_path.join("libraries"));
     mkdir!(parent_path.join("natives"));
     mkdir!(parent_path.join("assets").join("objects"));

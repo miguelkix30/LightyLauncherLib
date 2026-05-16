@@ -57,11 +57,14 @@ pub type ExtractResult<T> = Result<T, ExtractError>;
 /// Errors related to application state initialization
 #[derive(Debug, Error)]
 pub enum AppStateError {
-    #[error("Failed to create project directories")]
-    ProjectDirsCreation,
+    #[error("AppState::init() has already been called")]
+    AlreadyInitialized,
 
-    #[error("AppState not initialized")]
+    #[error("AppState::init() has not been called yet — call it once at startup")]
     NotInitialized,
+
+    #[error("Platform doesn't expose a standard {0} directory")]
+    MissingPlatformDir(&'static str),
 }
 
 /// Type alias for download operations results

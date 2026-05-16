@@ -53,7 +53,6 @@ sha1.workspace = true
 hex.workspace = true
 
 # Paths & Filenames
-directories.workspace = true
 sanitize-filename.workspace = true
 
 # Utilities
@@ -75,3 +74,7 @@ events = ["lighty-event", "lighty-java/events", "lighty-core/events"]
 neoforge = ["lighty-loaders/neoforge"]
 # Required so the installer can run Forge post-install processors
 forge = ["lighty-loaders/forge"]
+# Wire up the launch-side mod resolver (which spawns no JVM but reads
+# loaders' mods clients).
+modrinth = ["lighty-loaders/modrinth"]
+curseforge = ["lighty-loaders/curseforge"]

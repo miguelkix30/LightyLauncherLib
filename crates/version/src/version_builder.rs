@@ -1,79 +1,111 @@
-use std::{fmt::Debug,
-          path::{Path, PathBuf}
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
 };
-use once_cell::sync::Lazy;
-use directories::ProjectDirs;
+
+use lighty_core::AppState;
+use lighty_loaders::mods::request::ModRequest;
 use lighty_loaders::types::VersionInfo;
 
 /// Configures a Minecraft instance: name, loader, versions, and on-disk paths.
 ///
-/// # Examples
+/// Default directories are derived from the global [`AppState`]:
+/// - `game_dirs`   = `AppState::data_dir().join(name)`
+/// - `runtime_dir` = alias of `game_dirs` until overridden
+/// - `java_dirs`   = `AppState::config_dir().join("jre")`
 ///
+/// Call [`AppState::init`] once at startup before constructing any
+/// `VersionBuilder`.
+///
+/// # Example
 /// ```rust
-/// use lighty_version::VersionBuilder;
+/// use lighty_core::AppState;
 /// use lighty_loaders::types::Loader;
+/// use lighty_version::VersionBuilder;
 ///
-/// let builder = VersionBuilder::new("my-profile", Loader::Vanilla, "0.15.0", "1.20.1", &PROJECT_DIRS);
+/// AppState::init("LightyLauncher")?;
 ///
-/// // Or with the builder pattern:
-/// let builder = VersionBuilder::new("my-profile", Loader::Vanilla, "0.15.0", "1.20.1", &PROJECT_DIRS)
-///     .with_custom_game_dir(PathBuf::from("./games"))
-///     .with_custom_java_dir(PathBuf::from("./java"));
+/// let builder = VersionBuilder::new("my-profile", Loader::Vanilla, "", "1.21.1");
+///
+/// // Relocate the JVM-runtime folder (mods/saves/options.txt):
+/// //   builder.launch(...).with_arguments()
+/// //       .set(KEY_GAME_DIRECTORY, "runtime").done()    // → {data_dir}/{name}/runtime
+/// //       .set(KEY_GAME_DIRECTORY, "/mnt/games").done() // → /mnt/games (absolute)
 /// ```
 #[derive(Debug, Clone)]
-pub struct VersionBuilder<'a, L = ()> {
+pub struct VersionBuilder<L = ()> {
     pub name: String,
     pub loader: L,
     pub loader_version: String,
     pub minecraft_version: String,
-    pub project_dirs: &'a Lazy<ProjectDirs>,
     pub game_dirs: PathBuf,
     pub java_dirs: PathBuf,
+    /// Effective runtime dir. Initialised to `game_dirs` at `new()`
+    /// — the launcher doesn't impose a `/runtime` subfolder. The
+    /// runner overwrites this via [`VersionInfo::set_runtime_dir`]
+    /// when the user supplied `arg_overrides[KEY_GAME_DIRECTORY]`
+    /// through `LaunchBuilder::with_arguments()`. Not part of the
+    /// user-facing builder API.
+    pub runtime_dir: PathBuf,
+    /// Mods the user attached via [`Self::with_mod`].
+    ///
+    /// Populated by [`ModSourcesBuilder`] before any HTTP call —
+    /// actual resolution happens at install time inside the launch
+    /// crate.
+    pub mod_requests: Vec<ModRequest>,
 }
 
-impl<'a, L> VersionBuilder<'a, L> {
-    /// Creates a new `VersionBuilder` with default paths.
+impl<L> VersionBuilder<L> {
+    /// Creates a new `VersionBuilder` with default paths derived
+    /// from the global [`AppState`].
     ///
-    /// Default directories:
-    /// - `game_dirs`: `{data_dir}/{name}`
-    /// - `java_dirs`: `{config_dir}/jre`
+    /// Panics if [`AppState::init`] hasn't been called yet — that's
+    /// a programmer error, not a runtime condition.
     pub fn new(
         name: &str,
         loader: L,
         loader_version: &str,
         minecraft_version: &str,
-        project_dirs: &'a Lazy<ProjectDirs>,
     ) -> Self {
+        let game_dirs = AppState::data_dir().join(name);
+        let java_dirs = AppState::config_dir().join("jre");
         Self {
             name: name.to_string(),
             loader,
             loader_version: loader_version.to_string(),
             minecraft_version: minecraft_version.to_string(),
-            project_dirs,
-            game_dirs: project_dirs.data_dir().join(name),
-            java_dirs: project_dirs.config_dir().to_path_buf().join("jre"),
+            runtime_dir: game_dirs.clone(),
+            game_dirs,
+            java_dirs,
+            mod_requests: Vec::new(),
         }
     }
 
-    /// Overrides the game directory.
+    /// Opens the mod-sources sub-builder.
+    ///
+    /// Chain `.with_modrinth(...)` / `.with_curseforge(...)` on the
+    /// returned [`ModSourcesBuilder`] and finalise with `.done()` —
+    /// the accumulated [`ModRequest`]s are appended to
+    /// [`Self::mod_requests`] and the install pipeline resolves them
+    /// from the remote sources before launch.
     ///
     /// # Example
     /// ```rust
-    /// let builder = VersionBuilder::new(...)
-    ///     .with_custom_game_dir(PathBuf::from("./custom/games"));
+    /// instance
+    ///     .with_mod()
+    ///         .with_modrinth(vec![("sodium", None)])
+    ///         .done()
+    ///     .launch(&profile, JavaDistribution::Temurin)
+    ///     .run().await?;
     /// ```
-    pub fn with_custom_game_dir(mut self, game_dir: PathBuf) -> Self {
-        self.game_dirs = game_dir;
-        self
+    pub fn with_mod(self) -> ModSourcesBuilder<L> {
+        ModSourcesBuilder {
+            parent: self,
+            pending: Vec::new(),
+        }
     }
 
-    /// Overrides the Java directory.
-    ///
-    /// # Example
-    /// ```rust
-    /// let builder = VersionBuilder::new(...)
-    ///     .with_custom_java_dir(PathBuf::from("./custom/java"));
-    /// ```
+    /// Overrides the Java install directory.
     pub fn with_custom_java_dir(mut self, java_dir: PathBuf) -> Self {
         self.java_dirs = java_dir;
         self
@@ -98,7 +130,7 @@ impl<'a, L> VersionBuilder<'a, L> {
     }
 }
 
-impl<'a, L: Clone + Send + Sync + Debug> VersionInfo for VersionBuilder<'a, L> {
+impl<L: Clone + Send + Sync + Debug> VersionInfo for VersionBuilder<L> {
     type LoaderType = L;
 
     fn name(&self) -> &str {
@@ -123,11 +155,25 @@ impl<'a, L: Clone + Send + Sync + Debug> VersionInfo for VersionBuilder<'a, L> {
 
     fn loader(&self) -> &Self::LoaderType {
         &self.loader
+    }
+
+    fn mod_requests(&self) -> &[ModRequest] {
+        &self.mod_requests
+    }
+
+    fn runtime_dir(&self) -> &Path {
+        &self.runtime_dir
+    }
+
+    fn set_runtime_dir(&mut self, path: PathBuf) {
+        self.runtime_dir = path;
     }
 }
 
 // Impl for &VersionBuilder so callers can pass borrowed builders.
-impl<'a, 'b, L: Clone + Send + Sync + Debug> VersionInfo for &'b VersionBuilder<'a, L> {
+// Read-only — the no-op `set_runtime_dir` default from the trait
+// applies (can't mutate through a shared reference).
+impl<'b, L: Clone + Send + Sync + Debug> VersionInfo for &'b VersionBuilder<L> {
     type LoaderType = L;
 
     fn name(&self) -> &str {
@@ -152,5 +198,69 @@ impl<'a, 'b, L: Clone + Send + Sync + Debug> VersionInfo for &'b VersionBuilder<
 
     fn loader(&self) -> &Self::LoaderType {
         &self.loader
+    }
+
+    fn mod_requests(&self) -> &[ModRequest] {
+        &self.mod_requests
+    }
+
+    fn runtime_dir(&self) -> &Path {
+        &self.runtime_dir
+    }
+}
+
+/// Sub-builder accumulating [`ModRequest`]s from one or more sources.
+///
+/// Mirrors the `LaunchBuilder` sub-builder pattern: hold the parent,
+/// collect mutations locally, thread them back through `.done()`.
+///
+/// Each `.with_<source>(list)` call is synchronous — no HTTP work
+/// happens here. The launch crate's resolver does the actual fetch
+/// during `install()`, using the same JRE and event bus as the rest
+/// of the pipeline.
+pub struct ModSourcesBuilder<L> {
+    parent: VersionBuilder<L>,
+    pending: Vec<ModRequest>,
+}
+
+impl<L> ModSourcesBuilder<L> {
+    /// Adds Modrinth mod requests.
+    ///
+    /// Each tuple is `(project-slug-or-id, optional-mod-version-id)`.
+    /// `version` is the Modrinth release id, **not** the Minecraft
+    /// version — MC + loader come from the instance and are used by
+    /// the resolver to pick the latest compatible release when no
+    /// explicit version was pinned.
+    #[cfg(feature = "modrinth")]
+    pub fn with_modrinth<S>(mut self, list: Vec<(S, Option<String>)>) -> Self
+    where
+        S: Into<String>,
+    {
+        for (id_or_slug, version) in list {
+            self.pending.push(ModRequest::Modrinth {
+                id_or_slug: id_or_slug.into(),
+                version,
+            });
+        }
+        self
+    }
+
+    /// Adds CurseForge mod requests.
+    ///
+    /// Each tuple is `(numeric-mod-id, optional-numeric-file-id)`.
+    /// Requires [`lighty_loaders::mods::curseforge::set_api_key`] to
+    /// have been called before `.run()`.
+    #[cfg(feature = "curseforge")]
+    pub fn with_curseforge(mut self, list: Vec<(u32, Option<u32>)>) -> Self {
+        for (mod_id, file_id) in list {
+            self.pending.push(ModRequest::CurseForge { mod_id, file_id });
+        }
+        self
+    }
+
+    /// Threads the accumulated requests back into the parent builder.
+    pub fn done(mut self) -> VersionBuilder<L> {
+        self.parent.mod_requests.append(&mut self.pending);
+        self.parent
     }
 }

@@ -6,19 +6,19 @@ use lighty_auth::UserProfile;
 use lighty_core::time_it;
 #[cfg(feature = "events")]
 use lighty_event::EventBus;
-#[cfg(not(feature = "events"))]
-use lighty_java::JreError;
-use lighty_java::JavaDistribution;
 use lighty_java::jre_downloader::{find_java_binary, jre_download};
 use lighty_java::runtime::JavaRuntime;
+use lighty_java::JavaDistribution;
+#[cfg(not(feature = "events"))]
+use lighty_java::JreError;
 use lighty_loaders::types::version_metadata::{Version, VersionMetaData};
 use lighty_loaders::types::{Loader, LoaderExtensions, VersionInfo};
 
 use crate::arguments::Arguments;
 use crate::errors::{InstallerError, InstallerResult};
-use crate::installer::Installer;
 #[cfg(any(feature = "neoforge", feature = "forge"))]
 use crate::installer::ressources::libraries::{collect_library_tasks, download_libraries};
+use crate::installer::Installer;
 
 use super::builder::LaunchBuilder;
 
@@ -36,8 +36,7 @@ use lighty_loaders::forge::forge::{
 use lighty_loaders::forge::forge_legacy::extract_universal_jar as forge_legacy_extract_universal_jar;
 #[cfg(feature = "neoforge")]
 use lighty_loaders::neoforge::neoforge::{
-    extract_install_profile_libraries as neoforge_install_profile_libraries,
-    NEOFORGE,
+    extract_install_profile_libraries as neoforge_install_profile_libraries, NEOFORGE,
 };
 
 /// Extension trait that adds [`Self::launch`] to any installable instance.
@@ -69,7 +68,11 @@ pub trait Launch {
     ///         .done()
     ///     .await?;
     /// ```
-    fn launch<'a>(&'a mut self, profile: &'a UserProfile, java_distribution: JavaDistribution) -> LaunchBuilder<'a, Self>
+    fn launch<'a>(
+        &'a mut self,
+        profile: &'a UserProfile,
+        java_distribution: JavaDistribution,
+    ) -> LaunchBuilder<'a, Self>
     where
         Self: Sized;
 }
@@ -79,7 +82,11 @@ impl<T> Launch for T
 where
     T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
 {
-    fn launch<'a>(&'a mut self, profile: &'a UserProfile, java_distribution: JavaDistribution) -> LaunchBuilder<'a, Self> {
+    fn launch<'a>(
+        &'a mut self,
+        profile: &'a UserProfile,
+        java_distribution: JavaDistribution,
+    ) -> LaunchBuilder<'a, Self> {
         LaunchBuilder::new(self, profile, java_distribution)
     }
 }
@@ -99,108 +106,154 @@ pub(crate) async fn execute_launch<T>(
 where
     T: VersionInfo<LoaderType = Loader> + LoaderExtensions + Arguments + Installer,
 {
-        let username = &profile.username;
-        let uuid = &profile.uuid;
-        // 1. Fetch the loader metadata
-        let metadata = prepare_metadata(
-            version,
+    // 1. Fetch the loader metadata
+    let metadata = prepare_metadata(
+        version,
+        #[cfg(feature = "events")]
+        event_bus,
+    )
+    .await?;
+
+    let version_data = extract_version(&metadata)?;
+
+    // 2. Make sure Java is installed
+    let java_path = ensure_java_installed(
+        version,
+        version_data,
+        &java_distribution,
+        #[cfg(feature = "events")]
+        event_bus,
+    )
+    .await?;
+
+    // Reconcile arg_overrides[KEY_GAME_DIRECTORY] back onto the
+    // builder so install + args read the same value via
+    // version.runtime_dir(). `game_dirs.join(custom)` does what we
+    // want: a relative override ("runtime") resolves to
+    // game_dirs/runtime, an absolute override ("/mnt/games") wins
+    // outright (Path::join semantics).
+    if let Some(custom) = arg_overrides.get(crate::arguments::KEY_GAME_DIRECTORY) {
+        let resolved = version.game_dirs().join(custom);
+        if resolved.as_path() != version.runtime_dir() {
+            lighty_core::trace_info!(
+                from = %version.runtime_dir().display(),
+                to = %resolved.display(),
+                source = %custom,
+                "[Launch] Resolved KEY_GAME_DIRECTORY override before install"
+            );
+            version.set_runtime_dir(resolved);
+        }
+    }
+
+    // Resolve user-attached mods (Modrinth / CurseForge) and
+    // merge them into the pivot before install. Skipped when both
+    // source features are off (the builder methods are gated too,
+    // so `mod_requests()` is always empty in that case).
+    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
+    let _merged_owned;
+    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
+    let version_data: &Version = {
+        let user_mods = crate::installer::ressources::mod_resolver::resolve_user_mods(
+            version.mod_requests(),
+            version.minecraft_version(),
+            version.loader(),
             #[cfg(feature = "events")]
             event_bus,
-        ).await?;
+        )
+        .await?;
+        if user_mods.is_empty() {
+            version_data
+        } else {
+            let mut merged = version_data.clone();
+            match &mut merged.mods {
+                Some(existing) => existing.extend(user_mods),
+                slot => *slot = Some(user_mods),
+            }
+            _merged_owned = merged;
+            &_merged_owned
+        }
+    };
 
-        let version_data = extract_version(&metadata)?;
-
-        // 2. Make sure Java is installed
-        let java_path = ensure_java_installed(
-            version,
-            version_data,
-            &java_distribution,
-            #[cfg(feature = "events")]
-            event_bus,
-        ).await?;
-
-        // 3. Install Minecraft dependencies (libraries, natives, client, assets)
-        time_it!("Install delay", version.install(
-            version_data,
-            #[cfg(feature = "events")]
-            event_bus,
-        ).await?);
-
-        // 3b. Forge-family install_profile libraries + processors.
-        //
-        // For Forge and NeoForge, the install_profile.json libraries are
-        // downloaded through the shared library installer (parallel +
-        // retry + SHA1) so the processor JARs and the runtime-required
-        // `forge:universal` artifact land on disk. Only the processor
-        // execution stays inside each loader crate (it's a per-loader
-        // Java exec with different maven URLs / extract subdirs).
-        //
-        // TODO: generalize this into a per-loader post-install hook for any
-        // loader that needs one (currently only Forge / NeoForge do).
-        #[cfg(feature = "neoforge")]
-        if matches!(version.loader(), Loader::NeoForge) {
-            let install_profile = NEOFORGE.get_raw(version).await?;
-            let profile_libs = neoforge_install_profile_libraries(install_profile.as_ref());
-            let profile_tasks = collect_library_tasks(version, &profile_libs).await;
-            download_libraries(
-                profile_tasks,
+    // Install Minecraft dependencies (libraries, natives, client, assets)
+    time_it!(
+        "Install delay",
+        version
+            .install(
+                version_data,
                 #[cfg(feature = "events")]
                 event_bus,
             )
-            .await?;
-            run_neoforge_install_processors(
-                version,
-                install_profile.as_ref(),
-                java_path.clone(),
-            )
-            .await?;
-        }
+            .await?
+    );
 
-        #[cfg(feature = "forge")]
-        if matches!(version.loader(), Loader::Forge) {
-            let raw = FORGE.get_raw(version).await?;
-            match raw.as_ref() {
-                ForgeRawData::Modern { install_profile, .. } => {
-                    // Download processor-only libraries, then run processors.
-                    let profile_libs = forge_install_profile_libraries_modern(install_profile);
-                    let profile_tasks = collect_library_tasks(version, &profile_libs).await;
-                    download_libraries(
-                        profile_tasks,
-                        #[cfg(feature = "events")]
-                        event_bus,
-                    )
-                    .await?;
-                    run_forge_install_processors(
-                        version,
-                        install_profile,
-                        java_path.clone(),
-                    )
-                    .await?;
-                }
-                ForgeRawData::Legacy(profile) => {
-                    // No processors in the legacy era; the universal JAR
-                    // ships inside the installer and must be extracted to
-                    // its Maven path so the classpath entry resolves.
-                    forge_legacy_extract_universal_jar(version, profile).await?;
-                }
-            }
-        }
-
-        // 4. Launch the game
-        execute_game(
-            version,
-            version_data,
-            username,
-            uuid,
-            java_path,
-            arg_overrides,
-            arg_removals,
-            jvm_overrides,
-            jvm_removals,
-            raw_args,
+    // Forge-family install_profile libraries + processors.
+    //
+    // For Forge and NeoForge, the install_profile.json libraries are
+    // downloaded through the shared library installer (parallel +
+    // retry + SHA1) so the processor JARs and the runtime-required
+    // `forge:universal` artifact land on disk. Only the processor
+    // execution stays inside each loader crate (it's a per-loader
+    // Java exec with different maven URLs / extract subdirs).
+    //
+    // TODO: generalize this into a per-loader post-install hook for any
+    // loader that needs one (currently only Forge / NeoForge do).
+    #[cfg(feature = "neoforge")]
+    if matches!(version.loader(), Loader::NeoForge) {
+        let install_profile = NEOFORGE.get_raw(version).await?;
+        let profile_libs = neoforge_install_profile_libraries(install_profile.as_ref());
+        let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+        download_libraries(
+            profile_tasks,
             #[cfg(feature = "events")]
             event_bus,
-        ).await
+        )
+        .await?;
+        run_neoforge_install_processors(version, install_profile.as_ref(), java_path.clone())
+            .await?;
+    }
+
+    #[cfg(feature = "forge")]
+    if matches!(version.loader(), Loader::Forge) {
+        let raw = FORGE.get_raw(version).await?;
+        match raw.as_ref() {
+            ForgeRawData::Modern {
+                install_profile, ..
+            } => {
+                // Download processor-only libraries, then run processors.
+                let profile_libs = forge_install_profile_libraries_modern(install_profile);
+                let profile_tasks = collect_library_tasks(version, &profile_libs).await;
+                download_libraries(
+                    profile_tasks,
+                    #[cfg(feature = "events")]
+                    event_bus,
+                )
+                .await?;
+                run_forge_install_processors(version, install_profile, java_path.clone()).await?;
+            }
+            ForgeRawData::Legacy(profile) => {
+                // No processors in the legacy era; the universal JAR
+                // ships inside the installer and must be extracted to
+                // its Maven path so the classpath entry resolves.
+                forge_legacy_extract_universal_jar(version, profile).await?;
+            }
+        }
+    }
+
+    // Launch the game
+    execute_game(
+        version,
+        version_data,
+        profile,
+        java_path,
+        arg_overrides,
+        arg_removals,
+        jvm_overrides,
+        jvm_removals,
+        raw_args,
+        #[cfg(feature = "events")]
+        event_bus,
+    )
+    .await
 }
 
 /// Fetches the loader's full metadata document.
@@ -211,18 +264,23 @@ async fn prepare_metadata<T>(
 where
     T: VersionInfo<LoaderType = Loader> + LoaderExtensions,
 {
-    lighty_core::trace_debug!("[Launch] Fetching metadata for loader: {:?}", builder.loader());
+    lighty_core::trace_debug!(
+        "[Launch] Fetching metadata for loader: {:?}",
+        builder.loader()
+    );
 
     #[cfg(feature = "events")]
     let loader_name = format!("{:?}", builder.loader());
 
     #[cfg(feature = "events")]
     if let Some(bus) = event_bus {
-        bus.emit(lighty_event::Event::Loader(lighty_event::LoaderEvent::FetchingData {
-            loader: loader_name.clone(),
-            minecraft_version: builder.minecraft_version().to_string(),
-            loader_version: builder.loader_version().to_string(),
-        }));
+        bus.emit(lighty_event::Event::Loader(
+            lighty_event::LoaderEvent::FetchingData {
+                loader: loader_name.clone(),
+                minecraft_version: builder.minecraft_version().to_string(),
+                loader_version: builder.loader_version().to_string(),
+            },
+        ));
     }
 
     // Generic metadata fetching - automatically dispatches to the correct loader
@@ -230,14 +288,19 @@ where
 
     #[cfg(feature = "events")]
     if let Some(bus) = event_bus {
-        bus.emit(lighty_event::Event::Loader(lighty_event::LoaderEvent::DataFetched {
-            loader: loader_name,
-            minecraft_version: builder.minecraft_version().to_string(),
-            loader_version: builder.loader_version().to_string(),
-        }));
+        bus.emit(lighty_event::Event::Loader(
+            lighty_event::LoaderEvent::DataFetched {
+                loader: loader_name,
+                minecraft_version: builder.minecraft_version().to_string(),
+                loader_version: builder.loader_version().to_string(),
+            },
+        ));
     }
 
-    lighty_core::trace_info!("[Launch] Metadata fetched successfully for {:?}", builder.loader());
+    lighty_core::trace_info!(
+        "[Launch] Metadata fetched successfully for {:?}",
+        builder.loader()
+    );
     Ok(metadata)
 }
 
@@ -256,15 +319,21 @@ where
     // Look for an existing Java install before downloading
     match find_java_binary(builder.java_dirs(), java_distribution, &java_version).await {
         Ok(path) => {
-            lighty_core::trace_info!("[Java] Java {} already installed at: {:?}", java_version, path);
+            lighty_core::trace_info!(
+                "[Java] Java {} already installed at: {:?}",
+                java_version,
+                path
+            );
 
             #[cfg(feature = "events")]
             if let Some(bus) = event_bus {
-                bus.emit(lighty_event::Event::Java(lighty_event::JavaEvent::JavaAlreadyInstalled {
-                    distribution: java_distribution.get_name().to_string(),
-                    version: java_version,
-                    binary_path: path.to_string_lossy().to_string(),
-                }));
+                bus.emit(lighty_event::Event::Java(
+                    lighty_event::JavaEvent::JavaAlreadyInstalled {
+                        distribution: java_distribution.get_name().to_string(),
+                        version: java_version,
+                        binary_path: path.to_string_lossy().to_string(),
+                    },
+                ));
             }
 
             Ok(path)
@@ -274,10 +343,12 @@ where
 
             #[cfg(feature = "events")]
             if let Some(bus) = event_bus {
-                bus.emit(lighty_event::Event::Java(lighty_event::JavaEvent::JavaNotFound {
-                    distribution: java_distribution.get_name().to_string(),
-                    version: java_version,
-                }));
+                bus.emit(lighty_event::Event::Java(
+                    lighty_event::JavaEvent::JavaNotFound {
+                        distribution: java_distribution.get_name().to_string(),
+                        version: java_version,
+                    },
+                ));
             }
 
             #[cfg(feature = "events")]
@@ -289,7 +360,9 @@ where
                     lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
                 },
                 event_bus,
-            ).await.map_err(|e| InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
+            )
+            .await
+            .map_err(|e| InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
 
             #[cfg(not(feature = "events"))]
             let path = jre_download(
@@ -299,7 +372,11 @@ where
                 |current, total| {
                     lighty_core::trace_debug!("[Java] Download progress: {}/{}", current, total);
                 },
-            ).await.map_err(|e : JreError | InstallerError::DownloadFailed(format!("JRE download failed: {}", e)))?;
+            )
+            .await
+            .map_err(|e: JreError| {
+                InstallerError::DownloadFailed(format!("JRE download failed: {}", e))
+            })?;
 
             lighty_core::trace_info!("[Java] Java {} installed successfully", java_version);
             Ok(path)
@@ -311,8 +388,7 @@ where
 async fn execute_game<T>(
     builder: &T,
     version: &Version,
-    username: &str,
-    uuid: &str,
+    profile: &UserProfile,
     java_path: PathBuf,
     arg_overrides: &HashMap<String, String>,
     arg_removals: &HashSet<String>,
@@ -324,11 +400,21 @@ async fn execute_game<T>(
 where
     T: VersionInfo + Arguments,
 {
-    use crate::instance::{handle_console_streams, INSTANCE_MANAGER};
     use crate::instance::manager::GameInstance;
+    use crate::instance::{handle_console_streams, INSTANCE_MANAGER};
+
+    let username = profile.username.as_str();
 
     // Build the full argv (JVM args + main class + game args)
-    let arguments = builder.build_arguments(version, username, uuid, arg_overrides, arg_removals, jvm_overrides, jvm_removals, raw_args);
+    let arguments = builder.build_arguments(
+        version,
+        Some(profile),
+        arg_overrides,
+        arg_removals,
+        jvm_overrides,
+        jvm_removals,
+        raw_args,
+    );
 
     // Wrap the Java binary path in a runtime helper
     let java_runtime = JavaRuntime::new(java_path);
@@ -344,7 +430,11 @@ where
             let instance = GameInstance {
                 pid,
                 instance_name: builder.name().to_string(),
-                version: format!("{}-{}", builder.minecraft_version(), builder.loader_version()),
+                version: format!(
+                    "{}-{}",
+                    builder.minecraft_version(),
+                    builder.loader_version()
+                ),
                 username: username.to_string(),
                 game_dir: builder.game_dirs().to_path_buf(),
                 started_at: std::time::SystemTime::now(),
@@ -360,7 +450,11 @@ where
                 bus.emit(Event::InstanceLaunched(InstanceLaunchedEvent {
                     pid,
                     instance_name: builder.name().to_string(),
-                    version: format!("{}-{}", builder.minecraft_version(), builder.loader_version()),
+                    version: format!(
+                        "{}-{}",
+                        builder.minecraft_version(),
+                        builder.loader_version()
+                    ),
                     username: username.to_string(),
                     timestamp: std::time::SystemTime::now(),
                 }));
@@ -368,7 +462,11 @@ where
                 // Spawn the window-appearance watcher
                 let bus_clone = bus.clone();
                 let instance_name = builder.name().to_string();
-                let version = format!("{}-{}", builder.minecraft_version(), builder.loader_version());
+                let version = format!(
+                    "{}-{}",
+                    builder.minecraft_version(),
+                    builder.loader_version()
+                );
                 tokio::spawn(super::window::detect_window_appearance(
                     pid,
                     instance_name,
@@ -391,7 +489,10 @@ where
         }
         Err(e) => {
             lighty_core::trace_error!("[Launch] Failed to launch game: {}", e);
-            Err(InstallerError::DownloadFailed(format!("Launch failed: {}", e)))
+            Err(InstallerError::DownloadFailed(format!(
+                "Launch failed: {}",
+                e
+            )))
         }
     }
 }

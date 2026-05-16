@@ -29,6 +29,20 @@ pub enum QueryError {
 
     #[error("Invalid metadata format")]
     InvalidMetadata,
+
+    #[error("Mod not found on {provider}: {id}")]
+    ModNotFound { provider: &'static str, id: String },
+
+    #[error("Mod {id} on {provider} has no version compatible with Minecraft {mc} + loader {loader}")]
+    ModIncompatible {
+        provider: &'static str,
+        id: String,
+        mc: String,
+        loader: String,
+    },
+
+    #[error("Mod {id} on CurseForge disallows third-party distribution; download manually from the project page")]
+    ModDistributionForbidden { id: String },
 }
 
 pub type Result<T> = std::result::Result<T, QueryError>;

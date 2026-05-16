@@ -7,21 +7,11 @@
 ```rust
 use lighty_launcher::core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
-
-    // launcher_dir contains:
+    // AppState exposes:
     // - data_dir()  -> game files, instances, versions
     // - cache_dir() -> java runtimes, temporary files
 
@@ -39,7 +29,6 @@ let instance = VersionBuilder::new(
     Loader::Vanilla,    // Loader type
     "",                 // Loader version (empty for Vanilla)
     "1.21.1",           // Minecraft version
-    launcher_dir        // From AppState::get_project_dirs()
 );
 ```
 
@@ -64,7 +53,7 @@ println!("Libraries: {}", metadata.libraries.len());
 ```rust
 use lighty_launcher::prelude::*;
 
-let instance = VersionBuilder::new("vanilla-1.21", Loader::Vanilla, "", "1.21.1", launcher_dir);
+let instance = VersionBuilder::new("vanilla-1.21", Loader::Vanilla, "", "1.21.1");
 let metadata = instance.get_metadata().await?;
 ```
 
@@ -80,7 +69,6 @@ let instance = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",      // Fabric loader version
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -96,7 +84,6 @@ let instance = VersionBuilder::new(
     Loader::Quilt,
     "0.27.1",      // Quilt loader version
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -112,7 +99,6 @@ let instance = VersionBuilder::new(
     Loader::NeoForge,
     "21.1.80",     // NeoForge version
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -127,26 +113,14 @@ For custom servers with LightyUpdater:
 ```rust
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // LightyVersionBuilder for custom servers
     let instance = LightyVersionBuilder::new(
         "my-modpack",                    // Instance name
         "https://myserver.com/api",      // Server URL
-        "1.21.1",                        // Minecraft version
-        launcher_dir
     );
 
     let metadata = instance.get_metadata().await?;
@@ -199,16 +173,7 @@ use lighty_launcher::prelude::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create event bus
     let event_bus = EventBus::new(1000);
@@ -232,7 +197,7 @@ let _app = AppState::new(
         }
     });
 
-    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1", launcher_dir);
+    let instance = VersionBuilder::new("fabric-1.21", Loader::Fabric, "0.16.9", "1.21.1");
 
     // Metadata fetching will emit events
     let metadata = instance.get_metadata().await?;

@@ -15,37 +15,32 @@
 //!
 //! Implement the `Authenticator` trait to create your own authentication provider:
 //!
-//! ```rust
-//! use lighty_auth::{Authenticator, UserProfile, UserRole, AuthResult, AuthError};
-//! # use async_trait::async_trait;
+//! ```rust,ignore
+//! use lighty_auth::{Authenticator, AuthProvider, UserProfile, AuthResult};
 //!
 //! pub struct MyCustomAuth {
 //!     api_url: String,
 //!     username: String,
 //! }
 //!
-//! impl MyCustomAuth {
-//!     pub fn new(api_url: String, username: String) -> Self {
-//!         Self { api_url, username }
-//!     }
-//! }
-//!
 //! impl Authenticator for MyCustomAuth {
 //!     async fn authenticate(
 //!         &mut self,
-//!         #[cfg(feature = "events")] event_bus: Option<&lighty_event::EventBus>,
+//!         #[cfg(feature = "events")] _event_bus: Option<&lighty_event::EventBus>,
 //!     ) -> AuthResult<UserProfile> {
-//!         // Your custom authentication logic here
-//!
-//!         // Example: make HTTP request to your API
-//!         // let response = reqwest::get(&self.api_url).await?;
-//!         // let data = response.json::<YourResponse>().await?;
-//!
+//!         // ... your auth flow here ...
 //!         Ok(UserProfile {
+//!             id: None,
 //!             username: self.username.clone(),
 //!             uuid: "your-uuid".to_string(),
 //!             access_token: Some("your-token".to_string()),
-//!             role: UserRole::User,
+//!             xuid: None,
+//!             email: None,
+//!             email_verified: false,
+//!             money: None,
+//!             role: None,
+//!             banned: false,
+//!             provider: AuthProvider::Custom { base_url: self.api_url.clone() },
 //!         })
 //!     }
 //! }

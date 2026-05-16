@@ -13,10 +13,10 @@ sequenceDiagram
     participant JavaManager
     participant Process
 
-    User->>AppState: new(QUALIFIER, ORGANIZATION, APPLICATION)
-    AppState-->>User: project_dirs
+    User->>AppState: init(name)
+    AppState-->>User: paths stored globally
 
-    User->>VersionBuilder: new(name, loader, loader_version, mc_version, project_dirs)
+    User->>VersionBuilder: new(name, loader, loader_version, mc_version)
     VersionBuilder-->>User: instance
 
     User->>Auth: OfflineAuth::new(username)
@@ -107,7 +107,7 @@ sequenceDiagram
     participant Minecraft
 
     User->>MicrosoftAuth: new(client_id)
-    User->>MicrosoftAuth: authenticate()
+    User->>MicrosoftAuth: authenticate(event_bus)
 
     MicrosoftAuth->>DeviceFlow: Request Device Code
     DeviceFlow-->>MicrosoftAuth: device_code, user_code, verification_url
@@ -116,30 +116,71 @@ sequenceDiagram
     loop Poll for completion
         MicrosoftAuth->>DeviceFlow: Poll for token
         alt User Authorized
-            DeviceFlow-->>MicrosoftAuth: access_token
+            DeviceFlow-->>MicrosoftAuth: access_token + refresh_token
         else Still Pending
             DeviceFlow-->>MicrosoftAuth: authorization_pending
         end
     end
 
     MicrosoftAuth->>Xbox: Authenticate with Xbox Live
-    Xbox-->>MicrosoftAuth: xbox_token, user_hash
+    Xbox-->>MicrosoftAuth: xbox_token, user_hash (UHS)
 
     MicrosoftAuth->>Xbox: Get XSTS Token
-    Xbox-->>MicrosoftAuth: xsts_token, xuid
+    Xbox-->>MicrosoftAuth: xsts_token
 
-    MicrosoftAuth->>Minecraft: Authenticate with Minecraft
+    MicrosoftAuth->>Minecraft: Authenticate with Minecraft (XBL3.0 x=UHS;xsts_token)
     Minecraft-->>MicrosoftAuth: minecraft_access_token
 
-    MicrosoftAuth->>Minecraft: Get Profile
+    Note over MicrosoftAuth: Decode xuid from MC token JWT payload
+    Note over MicrosoftAuth: (authlib expects it to match --xuid)
+
+    MicrosoftAuth->>Minecraft: Get Profile (Bearer mc_token)
     Minecraft-->>MicrosoftAuth: username, uuid
 
     MicrosoftAuth-->>User: UserProfile {
-        username,
-        uuid,
-        access_token: Some(minecraft_access_token),
-        role: User
+        username, uuid,
+        access_token: Some(mc_token),
+        xuid: Some(xuid),
+        provider: Microsoft { client_id, refresh_token: Some(rt) }
     }
+```
+
+### Silent Re-authentication
+
+After the first device-code flow, subsequent launches can skip user
+interaction entirely by reusing the persisted refresh token:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Storage as Keyring / Disk
+    participant MicrosoftAuth
+    participant MS as Microsoft OAuth
+    participant Xbox
+    participant Minecraft
+
+    User->>Storage: load_profile()
+    Storage-->>User: UserProfile (provider has refresh_token)
+
+    User->>MicrosoftAuth: authenticate_with_refresh_token(rt)
+    MicrosoftAuth->>MS: POST /token (grant_type=refresh_token)
+    alt Refresh token still valid
+        MS-->>MicrosoftAuth: new access_token + rotated refresh_token
+        MicrosoftAuth->>Xbox: Authenticate (silent)
+        Xbox-->>MicrosoftAuth: xbox_token, UHS
+        MicrosoftAuth->>Xbox: XSTS
+        Xbox-->>MicrosoftAuth: xsts_token
+        MicrosoftAuth->>Minecraft: login_with_xbox
+        Minecraft-->>MicrosoftAuth: new mc_token
+        MicrosoftAuth->>Minecraft: get profile
+        Minecraft-->>MicrosoftAuth: username, uuid
+        MicrosoftAuth-->>User: UserProfile (refresh_token rotated)
+        User->>Storage: save_profile() (persist the new rt)
+    else Refresh token expired (~90d) or revoked
+        MS-->>MicrosoftAuth: 4xx
+        MicrosoftAuth-->>User: AuthError::InvalidToken
+        Note over User: Fall back to authenticate() (device-code)
+    end
 ```
 
 ## Installation Sequence
@@ -423,7 +464,7 @@ sequenceDiagram
     participant ServerAPI
     participant Vanilla
 
-    User->>LightyBuilder: new(name, server_url, project_dirs)
+    User->>LightyBuilder: new(name, server_url)
     User->>LightyBuilder: get_metadata()
 
     LightyBuilder->>ServerAPI: GET {server_url}/version

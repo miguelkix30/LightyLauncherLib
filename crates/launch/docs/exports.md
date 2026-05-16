@@ -95,25 +95,15 @@ use lighty_launch::{LaunchBuilder, InstanceControl};
 use lighty_core::AppState;
 use lighty_launcher::prelude::*;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
     let mut instance = VersionBuilder::new(
         "test",
         Loader::Vanilla,
         "",
         "1.21.1",
-        launcher_dir
     );
 
     let mut auth = OfflineAuth::new("Player");

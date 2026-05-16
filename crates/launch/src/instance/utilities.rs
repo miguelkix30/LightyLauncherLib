@@ -23,7 +23,6 @@ use super::INSTANCE_MANAGER;
 ///     Loader::Fabric,
 ///     "0.15.0",
 ///     "1.20.1",
-///     &launcher_dir,
 /// );
 ///
 /// // Now you can use instance control methods

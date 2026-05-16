@@ -33,20 +33,10 @@ use lighty_core::AppState;
 use lighty_launcher::prelude::*;
 use lighty_java::JavaDistribution;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize app state
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // Create instance
     let mut instance = VersionBuilder::new(
@@ -54,7 +44,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     // Authenticate

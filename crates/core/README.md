@@ -26,23 +26,13 @@ lighty-core = "26.5.1"
 ```rust
 use lighty_core::{AppState, system::{OS, ARCHITECTURE}};
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize application state
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
-    let launcher_dir = AppState::get_project_dirs();
-
-    println!("Data directory: {}", launcher_dir.data_dir().display());
-    println!("Cache directory: {}", launcher_dir.cache_dir().display());
+    println!("Data directory: {}", AppState::data_dir().display());
+    println!("Cache directory: {}", AppState::cache_dir().display());
     println!("Running on: {:?} {:?}", OS, ARCHITECTURE);
 
     Ok(())

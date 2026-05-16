@@ -584,9 +584,73 @@ async fn main()  {
 }
 ```
 
+## Microsoft Silent Re-auth with OS Keyring
+
+Persist the MS refresh token in the OS keyring so the user never has
+to re-enter a device code unless the token expires (≈ 90 days of
+inactivity). This is the recommended production pattern for any
+Microsoft-based launcher.
+
+```rust
+use lighty_launcher::prelude::*;
+
+const SERVICE: &str = "MyLauncher";
+const ACCOUNT: &str = "default";
+
+fn load_profile() -> Option<UserProfile> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
+    serde_json::from_str(&entry.get_password().ok()?).ok()
+}
+
+fn save_profile(profile: &UserProfile) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
+    entry.set_password(&serde_json::to_string(profile)?)?;
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let mut auth = MicrosoftAuth::new("your-azure-client-id");
+    auth.set_device_code_callback(|code, url| {
+        println!("Visit {url} and enter: {code}");
+    });
+
+    // 1) Try silent re-auth from the persisted refresh token.
+    let cached_rt = load_profile().and_then(|saved| match saved.provider {
+        AuthProvider::Microsoft { refresh_token: Some(rt), .. } => Some(rt),
+        _ => None,
+    });
+
+    let profile = match cached_rt {
+        Some(rt) => match auth.authenticate_with_refresh_token(&rt, None).await {
+            Ok(p) => p,
+            Err(_) => auth.authenticate(None).await?, // expired → device-code
+        },
+        None => auth.authenticate(None).await?,       // first launch → device-code
+    };
+
+    // 2) Persist the (possibly rotated) refresh token + profile.
+    save_profile(&profile)?;
+    println!("Welcome back, {}", profile.username);
+    Ok(())
+}
+```
+
+The library does not depend on `keyring` — add it to your own crate as
+needed (`keyring = "3"`). The keyring crate uses Linux Secret Service,
+macOS Keychain, and Windows Credential Manager under the hood, all of
+which encrypt at rest.
+
+The full runnable variant lives at
+[`examples/auth/microsoft.rs`](../../../examples/auth/microsoft.rs).
+Parallel examples for Azuriom (`verify`-based persistence) and a
+custom backend (skeleton `Authenticator` impl) are next to it under
+`examples/auth/`.
+
 ## See Also
 
 - [Overview](./overview.md) - Architecture overview
 - [Offline Mode](./offline.md) - Offline authentication
-- [Microsoft OAuth](./microsoft.md) - Microsoft authentication
+- [Microsoft OAuth](./microsoft.md) - Microsoft authentication, refresh
+  tokens, and the silent re-auth flow
 - [Azuriom CMS](./azuriom.md) - Azuriom authentication

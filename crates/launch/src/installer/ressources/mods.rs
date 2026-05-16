@@ -22,7 +22,11 @@ pub async fn collect_mod_tasks(
         return Vec::new();
     }
 
-    let parent_path = version.game_dirs().join("mods");
+    // Mods land where the running game scans for them — i.e. the
+    // working dir the JVM is launched in (`${game_directory}`).
+    // `VersionInfo::runtime_dir()` is the same source the argument
+    // builder uses, so install + launch can never disagree.
+    let parent_path = version.runtime_dir().join("mods");
 
     // Create mods directory only if there are mods to install
     lighty_core::mkdir!(&parent_path);

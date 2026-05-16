@@ -29,29 +29,49 @@ You need to register an application in Azure Active Directory:
 
 ## Quick Start
 
+### First launch (device-code prompt)
+
 ```rust
-use lighty_auth::{microsoft::MicrosoftAuth, Authenticator};
+use lighty_launcher::prelude::*;
 
 #[tokio::main]
-async fn main()  {
+async fn main() -> anyhow::Result<()> {
     let mut auth = MicrosoftAuth::new("your-azure-client-id");
 
     // Set callback to display device code
     auth.set_device_code_callback(|code, url| {
-        println!("Please visit: {}", url);
-        println!("And enter code: {}", code);
+        println!("Please visit: {url}");
+        println!("And enter code: {code}");
     });
 
     // Authenticate (blocks until user completes authorization)
-    let profile = auth.authenticate().await?;
+    let profile = auth.authenticate(None).await?;
 
     println!("Logged in as: {}", profile.username);
     println!("UUID: {}", profile.uuid);
-    println!("Access Token: {}", profile.access_token.unwrap());
-
+    println!("XUID: {:?}", profile.xuid);
     Ok(())
 }
 ```
+
+### Subsequent launches (silent re-auth)
+
+Once you've persisted the resulting `UserProfile`, use the embedded
+refresh token to skip the device-code prompt entirely:
+
+```rust
+let mut auth = MicrosoftAuth::new("your-azure-client-id");
+
+// Load the saved profile from your storage (file, keyring, DB…).
+let saved: UserProfile = load_from_storage()?;
+let AuthProvider::Microsoft { refresh_token: Some(rt), .. } = saved.provider else { /* … */ };
+
+// Zero user interaction — directly hits the Xbox/XSTS/MC chain.
+let profile = auth.authenticate_with_refresh_token(&rt, None).await?;
+```
+
+See the [Token Management](#token-management) section below for the
+full silent-first pattern and storage recommendations.
 
 ## Authentication Flow
 
@@ -367,59 +387,84 @@ let profile = auth.authenticate(Some(&event_bus)).await?;
 
 ## Token Management
 
-### Access Token Storage
+### Silent Re-authentication (Recommended)
+
+The MS refresh token (issued alongside the access token thanks to the
+`offline_access` scope) lives **~90 days of inactivity**. Persist it
+after the first device-code flow and use it on subsequent launches via
+[`MicrosoftAuth::authenticate_with_refresh_token`] to skip the
+device-code prompt entirely.
 
 ```rust
-// Save token for future use
-let profile = auth.authenticate().await?;
-let token = profile.access_token.unwrap();
+use lighty_launcher::prelude::*;
 
-// Store securely (encrypt at rest)
-save_token_to_keychain(&token)?;
+let mut auth = MicrosoftAuth::new("your-azure-client-id");
+
+// Try silent first. The refresh_token comes from the previous
+// authenticate() call — see "Persistence" below for where to keep it.
+let profile = match auth.authenticate_with_refresh_token(&stored_refresh_token, None).await {
+    Ok(p) => p,
+    Err(_) => {
+        // Token expired/revoked → fall back to device-code.
+        auth.set_device_code_callback(|code, url| {
+            println!("Visit {url} and enter: {code}");
+        });
+        auth.authenticate(None).await?
+    }
+};
 ```
 
-### Token Refresh
+Microsoft **rotates** the refresh token on every refresh (RFC 6749). The
+new token always lands in `profile.provider` as
+`AuthProvider::Microsoft { refresh_token: Some(_), .. }` — just persist
+the whole `UserProfile` again and the next launch picks up the fresh
+token automatically.
 
-Microsoft tokens include refresh tokens (with `offline_access` scope):
+### Persistence with the OS Keyring
+
+The library doesn't pick a storage backend for you — pass `UserProfile`
+to whatever fits your app (file, DB, keyring…). The recommended pattern
+is the OS-native secure store via the [`keyring`](https://crates.io/crates/keyring) crate:
 
 ```rust
-// Not directly supported by lighty-auth
-// You need to implement refresh token logic yourself:
+const SERVICE: &str = "MyLauncher";
+const ACCOUNT: &str = "default";
 
-use reqwest::Client;
+fn save(profile: &UserProfile) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)?;
+    entry.set_password(&serde_json::to_string(profile)?)?;
+    Ok(())
+}
 
-async fn refresh_token(refresh_token: &str, client_id: &str) -> Result<String, Box<dyn Error>> {
-    let client = Client::new();
-
-    let response = client
-        .post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
-        .form(&[
-            ("grant_type", "refresh_token"),
-            ("client_id", client_id),
-            ("refresh_token", refresh_token),
-            ("scope", "XboxLive.signin offline_access"),
-        ])
-        .send()
-        .await?;
-
-    let data: serde_json::Value = response.json().await?;
-    Ok(data["access_token"].as_str().unwrap().to_string())
+fn load() -> Option<UserProfile> {
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT).ok()?;
+    serde_json::from_str(&entry.get_password().ok()?).ok()
 }
 ```
+
+Backed by Linux Secret Service / macOS Keychain / Windows Credential
+Manager — encrypted at rest by the OS, prompts the user on first access.
+A complete end-to-end example lives in
+[`examples/auth/microsoft.rs`](../../examples/auth/microsoft.rs).
 
 ## UserProfile Output
 
 ```rust
 pub struct UserProfile {
-    pub id: None,                          // No server ID
-    pub username: String,                  // Minecraft username
-    pub uuid: String,                      // Minecraft UUID (with dashes)
-    pub access_token: Some(String),        // Minecraft access token
-    pub email: None,                       // Not provided
-    pub email_verified: true,              // Assumed verified
-    pub money: None,                       // Not applicable
-    pub role: None,                        // Not applicable
-    pub banned: false,                     // Checked by Minecraft Services
+    pub id: None,                                  // No server ID
+    pub username: String,                          // Minecraft username
+    pub uuid: String,                              // Minecraft UUID (with dashes)
+    pub access_token: Some(String),                // Minecraft access token (~24h)
+    pub xuid: Some(String),                        // Xbox User ID, decoded from MC JWT
+    pub email: None,                               // Not provided
+    pub email_verified: true,                      // Assumed verified
+    pub money: None,                               // Not applicable
+    pub role: None,                                // Not applicable
+    pub banned: false,                             // Checked by Minecraft Services
+    pub provider: AuthProvider::Microsoft {        // Persisted as part of the profile
+        client_id: String,
+        refresh_token: Some(String),               // ~90 days, rotates on each use
+    },
 }
 ```
 

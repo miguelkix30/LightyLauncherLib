@@ -112,24 +112,30 @@ async fn main() -> anyhow::Result<()> {
 
 ```rust
 pub struct UserProfile {
-    pub id: Option<u64>,
+    pub id: Option<u64>,                 // Server-side user ID (Azuriom only)
     pub username: String,
-    pub uuid: String,
-    pub access_token: Option<String>,
+    pub uuid: String,                    // Minecraft UUID, with dashes
+    pub access_token: Option<String>,    // Session / MC access token
+    pub xuid: Option<String>,            // Xbox User ID (Microsoft only)
     pub email: Option<String>,
     pub email_verified: bool,
     pub money: Option<f64>,
     pub role: Option<UserRole>,
     pub banned: bool,
+    pub provider: AuthProvider,          // Which authenticator produced this profile
 }
 ```
+
+`UserProfile` is `Serialize` + `Deserialize`, so persisting the whole
+struct (e.g. in an OS keyring) is the recommended way to enable
+"remember me" without exposing extra surface from the library.
 
 ### UserRole
 
 ```rust
 pub struct UserRole {
     pub name: String,
-    pub color: Option<String>,
+    pub color: Option<String>,        // Hex format: #RRGGBB
 }
 ```
 
@@ -138,25 +144,45 @@ pub struct UserRole {
 ```rust
 pub enum AuthProvider {
     Offline,
-    Azuriom { base_url: String },
-    Microsoft { client_id: String },
-    Custom { base_url: String },
+    Azuriom {
+        base_url: String,
+    },
+    Microsoft {
+        client_id: String,
+        /// MS refresh token (~90 days, rotates per RFC 6749).
+        /// Populated by the device-code flow and consumed by
+        /// `MicrosoftAuth::authenticate_with_refresh_token` to skip
+        /// the device-code prompt on subsequent launches.
+        refresh_token: Option<String>,
+    },
+    Custom {
+        base_url: String,
+    },
 }
 ```
+
+The variant drives the `${user_type}` launch placeholder at JVM start:
+`Microsoft` → `"msa"`, `Azuriom` → `"mojang"`, `Offline`/`Custom` →
+`"legacy"`.
 
 ### AuthError
 
 ```rust
 pub enum AuthError {
-    NetworkError(String),
     InvalidCredentials,
     TwoFactorRequired,
-    AccountBanned,
-    MicrosoftAuthFailed(String),
-    XboxLiveAuthFailed(String),
-    MinecraftAuthFailed(String),
-    ParseError(String),
-    AzuriomError(String),
+    Invalid2FACode,
+    AccountBanned(String),
+    EmailNotVerified,
+    Network(reqwest::Error),
+    InvalidResponse(String),
+    InvalidToken,
+    Cancelled,
+    DeviceCodeExpired,
+    Timeout,
+    Serialization(serde_json::Error),
+    Io(std::io::Error),
+    Custom(String),
 }
 ```
 

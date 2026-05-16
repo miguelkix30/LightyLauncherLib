@@ -7,19 +7,9 @@
 ```rust
 use lighty_core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     Ok(())
 }
@@ -35,7 +25,6 @@ let mut instance = VersionBuilder::new(
     Loader::Fabric,
     "0.16.9",
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -184,17 +173,9 @@ Track launch progress with events:
 use lighty_event::{EventBus, Event, LaunchEvent};
 use lighty_launch::InstanceControl;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     // Create event bus
     let event_bus = EventBus::new(1000);
@@ -226,13 +207,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let launcher_dir = AppState::get_project_dirs();
     let mut instance = VersionBuilder::new(
         "fabric-1.21",
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     let mut auth = OfflineAuth::new("Player");
@@ -274,20 +253,10 @@ use lighty_launcher::prelude::*;
 use lighty_java::JavaDistribution;
 use lighty_launch::InstanceControl;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Initialize AppState
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
-
-    let launcher_dir = AppState::get_project_dirs();
+    AppState::init("MyLauncher")?;
 
     // 2. Create instance
     let mut instance = VersionBuilder::new(
@@ -295,7 +264,6 @@ async fn main() -> anyhow::Result<()> {
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     // 3. Authenticate

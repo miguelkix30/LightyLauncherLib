@@ -43,38 +43,31 @@
 
 ## Module Dependencies
 
-```mermaid
-graph TD
-    User[User Application]
-    Launcher[lighty-launcher]
-    Core[lighty-core]
-    Auth[lighty-auth]
-    Event[lighty-event]
-    Java[lighty-java]
-    Launch[lighty-launch]
-    Loaders[lighty-loaders]
-    Version[lighty-version]
+Direct workspace dependencies declared in each crate's `Cargo.toml`.
+Transitive deps are not listed (they're implied by the chain).
 
-    User --> Launcher
-    Launcher --> Core
-    Launcher --> Auth
-    Launcher --> Event
-    Launcher --> Java
-    Launcher --> Launch
-    Launcher --> Loaders
-    Launcher --> Version
+| Crate | Depends on | Optional (`events` feature) | Role |
+|-------|------------|-----------------------------|------|
+| `lighty-core` | — | `lighty-event` | Foundation: AppState, HTTP client, hashing, archive I/O, system probe |
+| `lighty-event` | — | — | Broadcast event bus and event types |
+| `lighty-auth` | `lighty-core` | `lighty-event` | Authentication providers (Offline, Microsoft, Azuriom) + the `Authenticator` trait |
+| `lighty-java` | `lighty-core` | `lighty-event` | Java distribution detection/install (Temurin, Zulu, GraalVM) and process spawning |
+| `lighty-loaders` | `lighty-core` | — | Loader metadata + install pipelines (Vanilla, Forge, NeoForge, Fabric, Quilt, OptiFine, LightyUpdater) |
+| `lighty-version` | `lighty-core`, `lighty-loaders` | — | High-level `VersionBuilder` that ties a loader version + MC version together |
+| `lighty-launch` | `lighty-core`, `lighty-java`, `lighty-version`, `lighty-loaders`, `lighty-auth` | `lighty-event` | Argument building, library + processor install, JVM launch, instance lifecycle |
+| `lighty-launcher` | all of the above | — | Re-export shell exposed to end-users (`use lighty_launcher::prelude::*`) |
 
-    Auth --> Event
-    Java --> Core
-    Java --> Event
-    Launch --> Core
-    Launch --> Java
-    Launch --> Loaders
-    Launch --> Event
-    Loaders --> Core
-    Loaders --> Event
-    Version --> Loaders
-```
+**Properties this layout enforces:**
+
+- `lighty-event` is leaf — no Lighty crate it depends on. Anything can
+  emit events without creating a cycle.
+- `lighty-core` is the only "real" dependency floor. Cut it and
+  everything else fails to compile.
+- `lighty-launch` is the integration point — it's the only crate that
+  knows about every other crate. Everything above it is a re-export
+  layer.
+- The `events` feature is *additive* on each crate that supports it.
+  None of the lib's core paths require the event bus.
 
 ## Core Modules
 
@@ -92,7 +85,7 @@ graph TD
 - Cross-platform compatibility
 
 **Key Exports**:
-- `AppState::new()` - Initialize project directories
+- `AppState::init(name)` - Initialize project directories
 - `extract::zip_extract()` - Extract ZIP archives
 - `hash::verify_file_sha1()` - Verify file integrity
 - `download::download_file()` - HTTP downloads
@@ -601,20 +594,6 @@ Game processes spawned in controlled environment
 ### 5. Input Validation
 
 All user inputs validated before use
-
-## Testing Strategy
-
-### Unit Tests
-
-Each module has its own unit tests
-
-### Integration Tests
-
-Full workflow tests in `tests/` directory
-
-### Example-Based Testing
-
-Examples serve as integration tests
 
 ## Related Documentation
 
