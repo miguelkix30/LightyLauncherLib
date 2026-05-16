@@ -25,7 +25,6 @@ use tokio::time::{timeout, Duration};
 
 #[cfg(any(feature = "neoforge", feature = "forge"))]
 use crate::installer::ressources::libraries::{collect_library_tasks, download_libraries};
-use crate::installer::Installer;
 
 use super::builder::LaunchBuilder;
 
@@ -206,27 +205,6 @@ where
     );
 
     // 3b. Forge-family install_profile libraries + processors.
-    //
-    // For Forge and NeoForge, the install_profile.json libraries are
-    // downloaded through the shared library installer (parallel +
-    // retry + SHA1) so the processor JARs and the runtime-required
-
-
-    // `forge:universal` artifact land on disk. Only the processor
-    // execution stays inside each loader crate (it's a per-loader
-    // Java exec with different maven URLs / extract subdirs).
-    //
-    // TODO: generalize this into a per-loader post-install hook for any
-    // loader that needs one (currently only Forge / NeoForge do).
-    #[cfg(feature = "neoforge")]
-    if matches!(version.loader(), Loader::NeoForge) {
-        let install_profile = NEOFORGE.get_raw(version).await?;
-        let profile_libs = neoforge_install_profile_libraries(install_profile.as_ref());
-        let profile_tasks = collect_library_tasks(version, &profile_libs).await;
-        download_libraries(
-            profile_tasks,
-
-    // Forge-family install_profile libraries + processors.
     //
     // For Forge and NeoForge, the install_profile.json libraries are
     // downloaded through the shared library installer (parallel +
