@@ -72,4 +72,25 @@ pub enum LaunchEvent {
         pid: u32,
         exit_code: i32,
     },
+    /// Mod resolver started — about to walk the user request list and
+    /// query Modrinth/CurseForge for compatible releases.
+    ModResolveStarted {
+        request_count: usize,
+    },
+    /// One mod request is being fetched from its remote source.
+    ModResolveFetching {
+        source: String,     // "modrinth" | "curseforge"
+        identifier: String, // slug or numeric id, as the user provided
+    },
+    /// A `required` dependency was discovered while fetching `parent`.
+    /// The resolver will enqueue and fetch it next.
+    ModResolveDependency {
+        parent: String,
+        dependency: String,
+    },
+    /// Resolver finished — `total_mods` is the count of pivot entries
+    /// produced (user requests + transitive deps, deduplicated).
+    ModResolveCompleted {
+        total_mods: usize,
+    },
 }

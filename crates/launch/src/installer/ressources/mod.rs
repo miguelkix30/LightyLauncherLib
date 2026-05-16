@@ -11,3 +11,8 @@ pub(crate) mod mods;
 pub(crate) mod natives;
 pub(crate) mod client;
 pub(crate) mod assets;
+// User-attached mod resolver (Modrinth + CurseForge). Compiled only
+// when at least one source feature is enabled — gated at the module
+// boundary so disabling both lops it out of the binary cleanly.
+#[cfg(any(feature = "modrinth", feature = "curseforge"))]
+pub(crate) mod mod_resolver;

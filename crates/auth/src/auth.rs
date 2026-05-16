@@ -26,6 +26,10 @@ pub struct UserProfile {
     /// Access token for session validation
     pub access_token: Option<String>,
 
+    /// Xbox User ID (`xid` claim). Only populated by Microsoft auth; offline
+    /// and Azuriom leave this `None`. Surfaced to the JVM as `${auth_xuid}`.
+    pub xuid: Option<String>,
+
     /// User email (optional)
     pub email: Option<String>,
 
@@ -40,6 +44,10 @@ pub struct UserProfile {
 
     /// Whether the account is banned
     pub banned: bool,
+
+    /// Which authenticator produced this profile. Drives the `${user_type}`
+    /// placeholder (`"msa"` / `"mojang"` / `"legacy"`) at launch time.
+    pub provider: AuthProvider,
 }
 
 /// User role/rank information
@@ -53,7 +61,7 @@ pub struct UserRole {
 }
 
 /// Authentication provider type
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AuthProvider {
     /// Offline mode - no authentication
     Offline,
@@ -68,6 +76,11 @@ pub enum AuthProvider {
     Microsoft {
         /// OAuth client ID
         client_id: String,
+        /// OAuth refresh token (long-lived, ~90 days). Populated by the
+        /// device-code flow and forwarded through `authenticate_with_refresh_token`
+        /// for silent re-auth. Persist this in an OS keyring so the user
+        /// doesn't need to re-enter a device code on every launch.
+        refresh_token: Option<String>,
     },
 
     /// Custom authentication endpoint

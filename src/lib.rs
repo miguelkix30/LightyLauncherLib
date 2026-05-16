@@ -14,12 +14,10 @@
 //!
 //! ```no_run
 //! use lighty_launcher::prelude::*;
-//! use directories::ProjectDirs;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let launcher_dir = ProjectDirs::from("com", "MyCompany", "MyLauncher")
-//!         .expect("Failed to get project directories");
+//!     AppState::init("MyLauncher")?;
 //!
 //!     // Authenticate
 //!     let mut auth = auth::OfflineAuth::new("Player");
@@ -31,7 +29,6 @@
 //!         Loader::Vanilla,
 //!         "",
 //!         "1.21.1",
-//!         &launcher_dir
 //!     );
 //!
 //!     version.launch(&profile, JavaDistribution::Temurin)
@@ -237,6 +234,12 @@ pub mod loaders {
     #[cfg(feature = "lighty_updater")]
     pub use lighty_loaders::loaders::lighty_updater;
     pub use lighty_loaders::loaders::optifine;
+
+    // Mod-source clients (gated on the matching feature) — exposes
+    // `lighty_launcher::loaders::mods::{modrinth,curseforge}::set_api_key`
+    // and the `ModRequest` / `ModKey` types.
+    #[cfg(any(feature = "modrinth", feature = "curseforge"))]
+    pub use lighty_loaders::mods;
 }
 
 // ============================================================================
@@ -357,7 +360,10 @@ pub mod prelude {
     //! ```
 
     // Authentication
-    pub use crate::auth::{Authenticator, UserProfile, OfflineAuth, MicrosoftAuth, AzuriomAuth};
+    pub use crate::auth::{
+        Authenticator, UserProfile, AuthProvider, AuthError, UserRole,
+        OfflineAuth, MicrosoftAuth, AzuriomAuth,
+    };
 
     // Events
     #[cfg(feature = "events")]

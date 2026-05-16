@@ -313,11 +313,22 @@ fn merge_libraries(vanilla_libs: Vec<Library>, forge_libs: Vec<Library>) -> Vec<
     lib_map.into_values().collect()
 }
 
-/// Extracts the `group:artifact` (version-agnostic) key used for dedup.
+/// Extracts the `group:artifact[:classifier]` (version-agnostic) key
+/// used for dedup. The classifier MUST stay in the key — Forge's
+/// version.json ships two libs with the same coordinates differing
+/// only by classifier (`:universal` and `:client`), and collapsing
+/// them to `group:artifact` would silently drop one (the FML system
+/// mod lives in `:universal`, dropping it makes Forge crash with
+/// "Failed to find system mod: forge").
+///
+/// Maven coords: `group:artifact:version[:classifier]`.
 fn extract_artifact_key(maven_name: &str) -> String {
-    let mut parts = maven_name.split(':');
-    match (parts.next(), parts.next()) {
-        (Some(group), Some(artifact)) => format!("{}:{}", group, artifact),
+    let parts: Vec<&str> = maven_name.split(':').collect();
+    match parts.as_slice() {
+        [group, artifact, _version, classifier, ..] => {
+            format!("{}:{}:{}", group, artifact, classifier)
+        }
+        [group, artifact, ..] => format!("{}:{}", group, artifact),
         _ => maven_name.to_string(),
     }
 }

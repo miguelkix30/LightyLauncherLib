@@ -1,6 +1,7 @@
 // Copyright (c) 2025 Hamadi
 // Licensed under the MIT License
 
+use lighty_auth::{AuthProvider, UserProfile};
 use lighty_loaders::types::version_metadata::Version;
 use lighty_loaders::types::VersionInfo;
 use std::borrow::Cow;
@@ -52,11 +53,25 @@ pub const KEY_CLASSPATH_SEPARATOR: &str = "classpath_separator";
 // Default values used when no real session data is available
 const DEFAULT_ACCESS_TOKEN: &str = "0";
 const DEFAULT_XUID: &str = "0";
-const DEFAULT_CLIENT_ID: &str = "{client-id}";
 const DEFAULT_USER_TYPE: &str = "legacy";
 const DEFAULT_USER_PROPERTIES: &str = "{}";
 const DEFAULT_VERSION_TYPE: &str = "release";
 const CP_FLAG: &str = "-cp";
+
+/// Maps an `AuthProvider` to the `${user_type}` string the game expects.
+///
+/// - `Microsoft` → `"msa"` (Microsoft Account, modern online auth)
+/// - `Azuriom` → `"mojang"` (legacy Mojang-style sessions, what Azuriom mimics)
+/// - `Offline` → `"legacy"` (matches the historical default for unauth'd play)
+/// - `Custom` → `"legacy"` (callers can override via `set(KEY_USER_TYPE, ...)`
+///   on the `ArgumentsBuilder` when they need something specific)
+fn user_type_for(provider: &AuthProvider) -> &'static str {
+    match provider {
+        AuthProvider::Microsoft { .. } => "msa",
+        AuthProvider::Azuriom { .. } => "mojang",
+        AuthProvider::Offline | AuthProvider::Custom { .. } => "legacy",
+    }
+}
 
 /// Builds the final argv (JVM args + main class + game args + raw args)
 /// from a resolved [`Version`] plus runtime overrides and removals.
@@ -67,11 +82,16 @@ const CP_FLAG: &str = "-cp";
 pub trait Arguments {
     /// Constructs the launch argv for `builder` using the supplied
     /// overrides and removals.
+    ///
+    /// Pass the authenticated `profile` so auth-derived placeholders
+    /// (`${auth_player_name}`, `${auth_uuid}`, `${auth_access_token}`,
+    /// `${auth_xuid}`, `${user_type}`) are populated from real session
+    /// data. `None` keeps the legacy hardcoded defaults (`"0"`,
+    /// `"legacy"`, …) — useful for dry-run argv inspection or tests.
     fn build_arguments(
         &self,
         builder: &Version,
-        username: &str,
-        uuid: &str,
+        profile: Option<&UserProfile>,
         arg_overrides: &HashMap<String, String>,
         arg_removals: &HashSet<String>,
         jvm_overrides: &HashMap<String, String>,
@@ -84,8 +104,7 @@ impl<T: VersionInfo> Arguments for T {
     fn build_arguments(
         &self,
         builder: &Version,
-        username: &str,
-        uuid: &str,
+        profile: Option<&UserProfile>,
         arg_overrides: &HashMap<String, String>,
         arg_removals: &HashSet<String>,
         jvm_overrides: &HashMap<String, String>,
@@ -93,12 +112,23 @@ impl<T: VersionInfo> Arguments for T {
         raw_args: &[String],
     ) -> Vec<String> {
         // Build the placeholder substitution map
-        let mut variables = create_variable_map(self, builder, username, uuid);
+        let mut variables = create_variable_map(self, builder, profile);
 
         // Apply caller-supplied overrides on top
         for (key, value) in arg_overrides {
             variables.insert(key.clone(), value.clone());
         }
+
+        // KEY_GAME_DIRECTORY is special — the runner has already
+        // resolved arg_overrides[KEY_GAME_DIRECTORY] against
+        // `version.game_dirs()` (relative → joined, absolute → wins)
+        // and written the absolute path back via `set_runtime_dir`.
+        // Force the resolved value here so the JVM gets the
+        // already-absolute path instead of the raw user string.
+        variables.insert(
+            KEY_GAME_DIRECTORY.into(),
+            self.runtime_dir().display().to_string(),
+        );
 
         // Substitute `${...}` placeholders inside the game arguments
         let game_args = replace_variables_in_vec(&builder.arguments.game, &variables);
@@ -197,11 +227,15 @@ impl<T: VersionInfo> Arguments for T {
 }
 
 /// Builds the launch-argument placeholder map.
+///
+/// `profile` drives every auth-related placeholder. When `None`, we keep
+/// the legacy hardcoded defaults (this is what the previous offline-only
+/// code path effectively produced, and what callers without an auth flow
+/// — tests, dry-run tools — get for free).
 fn create_variable_map<T: VersionInfo>(
     version: &T,
     builder: &Version,
-    username: &str,
-    uuid: &str,
+    profile: Option<&UserProfile>,
 ) -> HashMap<String, String> {
         let mut map = HashMap::new();
 
@@ -210,21 +244,37 @@ fn create_variable_map<T: VersionInfo>(
         #[cfg(not(target_os = "windows"))]
         let classpath_separator = ":";
 
-        // Authentication
+        // Authentication: derive from the profile when available, otherwise
+        // keep the historical placeholder defaults so offline / no-auth
+        // callers see exactly the same argv as before.
+        let username = profile.map(|p| p.username.as_str()).unwrap_or("");
+        let uuid = profile.map(|p| p.uuid.as_str()).unwrap_or("");
+        let access_token = profile
+            .and_then(|p| p.access_token.as_deref())
+            .unwrap_or(DEFAULT_ACCESS_TOKEN);
+        let xuid = profile
+            .and_then(|p| p.xuid.as_deref())
+            .unwrap_or(DEFAULT_XUID);
+        let user_type = profile
+            .map(|p| user_type_for(&p.provider))
+            .unwrap_or(DEFAULT_USER_TYPE);
+
         map.insert(KEY_AUTH_PLAYER_NAME.into(), username.into());
         map.insert(KEY_AUTH_UUID.into(), uuid.into());
-        map.insert(KEY_AUTH_ACCESS_TOKEN.into(), DEFAULT_ACCESS_TOKEN.into());
-        map.insert(KEY_AUTH_XUID.into(), DEFAULT_XUID.into());
-        map.insert(KEY_CLIENT_ID.into(), DEFAULT_CLIENT_ID.into());
-        map.insert(KEY_USER_TYPE.into(), DEFAULT_USER_TYPE.into());
+        map.insert(KEY_AUTH_ACCESS_TOKEN.into(), access_token.into());
+        map.insert(KEY_AUTH_XUID.into(), xuid.into());
+        map.insert(KEY_CLIENT_ID.into(), lighty_core::AppState::client_id().to_string());
+        map.insert(KEY_USER_TYPE.into(), user_type.into());
         map.insert(KEY_USER_PROPERTIES.into(), DEFAULT_USER_PROPERTIES.into());
 
         // Version
         map.insert(KEY_VERSION_NAME.into(), version.name().into());
         map.insert(KEY_VERSION_TYPE.into(), DEFAULT_VERSION_TYPE.into());
 
-        // Directories
-        map.insert(KEY_GAME_DIRECTORY.into(), version.game_dirs().join("runtime").display().to_string());
+        // Directories — `runtime_dir()` is the single source of truth
+        // shared with the install pipeline (mods land where the game
+        // actually scans for them).
+        map.insert(KEY_GAME_DIRECTORY.into(), version.runtime_dir().display().to_string());
         map.insert(KEY_ASSETS_ROOT.into(), version.game_dirs().join("assets").display().to_string());
         map.insert(KEY_NATIVES_DIRECTORY.into(), version.game_dirs().join("natives").display().to_string());
         map.insert(KEY_LIBRARY_DIRECTORY.into(), version.game_dirs().join("libraries").display().to_string());
@@ -237,8 +287,8 @@ fn create_variable_map<T: VersionInfo>(
         map.insert(KEY_ASSETS_INDEX_NAME.into(), assets_index_name);
 
         // Launcher - use AppState for automatic configuration
-        map.insert(KEY_LAUNCHER_NAME.into(), lighty_core::AppState::get_app_name());
-        map.insert(KEY_LAUNCHER_VERSION.into(), lighty_core::AppState::get_app_version());
+        map.insert(KEY_LAUNCHER_NAME.into(), lighty_core::AppState::name().to_string());
+        map.insert(KEY_LAUNCHER_VERSION.into(), lighty_core::AppState::app_version().to_string());
 
         // Classpath
         let classpath = build_classpath(version, &builder.libraries);

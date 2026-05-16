@@ -74,6 +74,59 @@ async fn main() -> anyhow::Result<()> {
 - Device code flow (no embedded browser needed)
 - Full Xbox Live and Minecraft Services integration
 - Returns Minecraft access token for session validation
+- Captures the MS refresh token in `profile.provider` for silent
+  re-auth on subsequent launches (see below)
+
+### Silent Re-authentication (Microsoft "Remember Me")
+
+After the first device-code authentication, the resulting `UserProfile`
+carries the MS refresh token under
+`AuthProvider::Microsoft { refresh_token: Some(_), .. }`. Persist the
+whole profile, then on the next launch call
+`MicrosoftAuth::authenticate_with_refresh_token` instead of
+`authenticate` — no device-code prompt, no user interaction.
+
+```rust
+use lighty_launcher::prelude::*;
+
+let mut auth = MicrosoftAuth::new("your-azure-client-id");
+
+// 1) Try silent first using the refresh token from a previous run.
+let profile = match load_saved_profile() {
+    Some(saved) => match saved.provider {
+        AuthProvider::Microsoft { refresh_token: Some(rt), .. } => {
+            auth.authenticate_with_refresh_token(&rt, None).await.ok()
+        }
+        _ => None,
+    },
+    None => None,
+};
+
+// 2) Fall back to device-code if no token saved or refresh failed
+//    (token expired after ~90 days of inactivity, or was revoked).
+let profile = match profile {
+    Some(p) => p,
+    None => {
+        auth.set_device_code_callback(|code, url| {
+            println!("Visit {url} and enter: {code}");
+        });
+        auth.authenticate(None).await?
+    }
+};
+
+// 3) Persist again — Microsoft rotates the refresh token on every use
+//    (RFC 6749), and the new one is now inside `profile.provider`.
+save_profile(&profile)?;
+```
+
+**Recommended storage**: the OS-native secure store via the
+[`keyring`](https://crates.io/crates/keyring) crate — Linux Secret
+Service / macOS Keychain / Windows Credential Manager, encrypted at
+rest by the OS. The library does not depend on `keyring`; persistence
+is intentionally left to the consumer.
+
+A complete runnable example with keyring lives at
+[`examples/auth/microsoft.rs`](../../../examples/auth/microsoft.rs).
 
 ### Azuriom Authentication
 

@@ -13,7 +13,7 @@
 //! 6. Exchange for Minecraft token
 //! 7. Fetch Minecraft profile
 
-use crate::{Authenticator, AuthError, AuthResult, UserProfile};
+use crate::{Authenticator, AuthError, AuthProvider, AuthResult, UserProfile};
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use serde::Deserialize;
 use std::time::Duration;
@@ -293,75 +293,48 @@ impl MicrosoftAuth {
 
         Ok(profile)
     }
-}
 
-impl Authenticator for MicrosoftAuth {
-    async fn authenticate(
-        &mut self,
+    /// Refreshes a Microsoft access-token using the long-lived refresh
+    /// token from a previous device-code flow. No user interaction —
+    /// this is what makes "remember me" possible.
+    ///
+    /// `oauth2/v2.0/token` rotates the refresh token most of the time,
+    /// so the caller must replace the stored one with whatever this
+    /// returns.
+    async fn refresh_microsoft_token(&self, refresh_token: &str) -> AuthResult<MicrosoftTokenResponse> {
+        lighty_core::trace_debug!("Refreshing Microsoft token via refresh_token grant");
+
+        let response = CLIENT
+            .post(&format!("{}/token", MS_AUTH_URL))
+            .form(&[
+                ("grant_type", "refresh_token"),
+                ("client_id", &self.client_id),
+                ("refresh_token", refresh_token),
+                ("scope", "XboxLive.signin offline_access"),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            lighty_core::trace_warn!(error = %error_text, "Refresh token grant rejected (token likely expired or revoked)");
+            return Err(AuthError::InvalidToken);
+        }
+
+        let token: MicrosoftTokenResponse = response.json().await?;
+        lighty_core::trace_info!("Microsoft token refreshed silently");
+        Ok(token)
+    }
+
+    /// Runs the chain Xbox → XSTS → Minecraft → Profile starting from
+    /// an already-obtained Microsoft access token. Shared between the
+    /// device-code path ([`authenticate`]) and the silent refresh path
+    /// ([`authenticate_with_refresh_token`]).
+    async fn finalize_from_ms_token(
+        &self,
+        ms_token: MicrosoftTokenResponse,
         #[cfg(feature = "events")] event_bus: Option<&EventBus>,
     ) -> AuthResult<UserProfile> {
-        // Emit authentication started
-        #[cfg(feature = "events")]
-        if let Some(bus) = event_bus {
-            bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
-                provider: "Microsoft".to_string(),
-            }));
-        }
-
-        // Step 1: Request device code
-        #[cfg(feature = "events")]
-        if let Some(bus) = event_bus {
-            bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
-                provider: "Microsoft".to_string(),
-                step: "Requesting device code".to_string(),
-            }));
-        }
-
-        let device_code_response = match self.request_device_code().await {
-            Ok(response) => response,
-            Err(e) => {
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: format!("Failed to request device code: {}", e),
-                    }));
-                }
-                return Err(e);
-            }
-        };
-
-        // Notify user via callback
-        if let Some(callback) = &self.device_code_callback {
-            callback(&device_code_response.user_code, &device_code_response.verification_uri);
-        } else {
-            lighty_core::trace_warn!("No device code callback set - user won't see the authorization URL");
-        }
-
-        // Step 2: Poll for Microsoft token
-        #[cfg(feature = "events")]
-        if let Some(bus) = event_bus {
-            bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
-                provider: "Microsoft".to_string(),
-                step: "Waiting for user authorization".to_string(),
-            }));
-        }
-
-        let ms_token = match self.poll_for_token(&device_code_response.device_code).await {
-            Ok(token) => token,
-            Err(e) => {
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: format!("Failed to get Microsoft token: {}", e),
-                    }));
-                }
-                return Err(e);
-            }
-        };
-
-        // Step 3: Get Xbox Live token
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
@@ -369,22 +342,8 @@ impl Authenticator for MicrosoftAuth {
                 step: "Exchanging for Xbox Live token".to_string(),
             }));
         }
+        let xbox_token = self.get_xbox_token(&ms_token.access_token).await?;
 
-        let xbox_token = match self.get_xbox_token(&ms_token.access_token).await {
-            Ok(token) => token,
-            Err(e) => {
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: format!("Failed to get Xbox Live token: {}", e),
-                    }));
-                }
-                return Err(e);
-            }
-        };
-
-        // Step 4: Get XSTS token
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
@@ -392,41 +351,16 @@ impl Authenticator for MicrosoftAuth {
                 step: "Exchanging for XSTS token".to_string(),
             }));
         }
+        let xsts_token = self.get_xsts_token(&xbox_token.token).await?;
 
-        let xsts_token = match self.get_xsts_token(&xbox_token.token).await {
-            Ok(token) => token,
-            Err(e) => {
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: format!("Failed to get XSTS token: {}", e),
-                    }));
-                }
-                return Err(e);
-            }
-        };
-
-        // Extract UHS from XSTS token
         let uhs = xsts_token
             .display_claims
             .get("xui")
             .and_then(|xui| xui.get(0))
             .and_then(|user| user.get("uhs"))
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                let error = AuthError::InvalidResponse("Missing UHS in XSTS token".into());
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: "Missing UHS in XSTS token".to_string(),
-                    }));
-                }
-                error
-            })?;
+            .ok_or_else(|| AuthError::InvalidResponse("Missing UHS in XSTS token".into()))?;
 
-        // Step 5: Get Minecraft token
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
@@ -434,22 +368,13 @@ impl Authenticator for MicrosoftAuth {
                 step: "Exchanging for Minecraft token".to_string(),
             }));
         }
+        let mc_token = self.get_minecraft_token(&xsts_token.token, uhs).await?;
 
-        let mc_token = match self.get_minecraft_token(&xsts_token.token, uhs).await {
-            Ok(token) => token,
-            Err(e) => {
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: format!("Failed to get Minecraft token: {}", e),
-                    }));
-                }
-                return Err(e);
-            }
-        };
+        let xuid = decode_xuid_from_jwt(&mc_token.access_token);
+        if xuid.is_none() {
+            lighty_core::trace_warn!("Could not decode xuid from MC token JWT — --xuid will fall back to 0");
+        }
 
-        // Step 6: Get Minecraft profile
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
@@ -457,25 +382,10 @@ impl Authenticator for MicrosoftAuth {
                 step: "Fetching Minecraft profile".to_string(),
             }));
         }
+        let mc_profile = self.get_minecraft_profile(&mc_token.access_token).await?;
 
-        let mc_profile = match self.get_minecraft_profile(&mc_token.access_token).await {
-            Ok(profile) => profile,
-            Err(e) => {
-                #[cfg(feature = "events")]
-                if let Some(bus) = event_bus {
-                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
-                        provider: "Microsoft".to_string(),
-                        error: format!("Failed to get Minecraft profile: {}", e),
-                    }));
-                }
-                return Err(e);
-            }
-        };
-
-        // Format UUID with dashes
         let uuid = format_uuid(&mc_profile.id);
 
-        // Emit authentication success
         #[cfg(feature = "events")]
         if let Some(bus) = event_bus {
             bus.emit(Event::Auth(AuthEvent::AuthenticationSuccess {
@@ -490,13 +400,124 @@ impl Authenticator for MicrosoftAuth {
             username: mc_profile.name,
             uuid,
             access_token: Some(mc_token.access_token),
+            xuid,
             email: None,
             email_verified: true,
             money: None,
             role: None,
             banned: false,
+            provider: AuthProvider::Microsoft {
+                client_id: self.client_id.clone(),
+                refresh_token: ms_token.refresh_token,
+            },
         })
     }
+
+    /// Silent re-authentication using a stored MS refresh token.
+    ///
+    /// Skips the device-code prompt entirely — call this on every
+    /// subsequent launch with the `refresh_token` you persisted from
+    /// the previous successful `authenticate()`.
+    ///
+    /// Returns `AuthError::InvalidToken` if the refresh token has expired
+    /// (≈ 90 days of inactivity) or been revoked; in that case fall back
+    /// to a regular [`Authenticator::authenticate`] call.
+    pub async fn authenticate_with_refresh_token(
+        &mut self,
+        refresh_token: &str,
+        #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    ) -> AuthResult<UserProfile> {
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
+                provider: "Microsoft".to_string(),
+            }));
+            bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
+                provider: "Microsoft".to_string(),
+                step: "Refreshing Microsoft token".to_string(),
+            }));
+        }
+
+        let ms_token = match self.refresh_microsoft_token(refresh_token).await {
+            Ok(t) => t,
+            Err(e) => {
+                #[cfg(feature = "events")]
+                if let Some(bus) = event_bus {
+                    bus.emit(Event::Auth(AuthEvent::AuthenticationFailed {
+                        provider: "Microsoft".to_string(),
+                        error: format!("Refresh failed: {}", e),
+                    }));
+                }
+                return Err(e);
+            }
+        };
+
+        self.finalize_from_ms_token(
+            ms_token,
+            #[cfg(feature = "events")] event_bus,
+        ).await
+    }
+}
+
+impl Authenticator for MicrosoftAuth {
+    async fn authenticate(
+        &mut self,
+        #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    ) -> AuthResult<UserProfile> {
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
+                provider: "Microsoft".to_string(),
+            }));
+            bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
+                provider: "Microsoft".to_string(),
+                step: "Requesting device code".to_string(),
+            }));
+        }
+
+        let device_code_response = self.request_device_code().await?;
+
+        if let Some(callback) = &self.device_code_callback {
+            callback(&device_code_response.user_code, &device_code_response.verification_uri);
+        } else {
+            lighty_core::trace_warn!("No device code callback set - user won't see the authorization URL");
+        }
+
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Auth(AuthEvent::AuthenticationInProgress {
+                provider: "Microsoft".to_string(),
+                step: "Waiting for user authorization".to_string(),
+            }));
+        }
+
+        let ms_token = self.poll_for_token(&device_code_response.device_code).await?;
+
+        self.finalize_from_ms_token(
+            ms_token,
+            #[cfg(feature = "events")] event_bus,
+        ).await
+    }
+}
+
+/// Pulls the `xuid` claim out of the Minecraft access-token JWT.
+///
+/// The token shape is `<b64-header>.<b64-payload>.<sig>`. We only need
+/// the payload — base64url-decode it, deserialize the claims we care
+/// about (see [`MinecraftAccessTokenClaims`]), prefer `xuid` and fall
+/// back to `xid`. No signature check: we just received the token from
+/// Mojang ourselves over TLS.
+///
+/// Returns `None` if the token isn't a JWT, the payload doesn't decode,
+/// or both claims are absent — caller logs and falls back to the placeholder.
+fn decode_xuid_from_jwt(token: &str) -> Option<String> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+
+    let payload_b64 = token.split('.').nth(1)?;
+    let payload_bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
+    let claims: MinecraftAccessTokenClaims = serde_json::from_slice(&payload_bytes).ok()?;
+    claims.xuid.or(claims.xid)
 }
 
 /// Format UUID string with dashes
@@ -516,6 +537,18 @@ fn format_uuid(uuid: &str) -> String {
 }
 
 // Response structures
+
+/// Minimal subset of the Minecraft access-token JWT payload.
+///
+/// The token carries many more claims (`sub`, `auth`, `profiles`, `flags`,
+/// …) but we only need the Xbox identifier so the JVM's `--xuid` matches
+/// the same claim authlib later cross-checks. `xuid` is canonical;
+/// `xid` is the legacy alias some payloads still emit.
+#[derive(Debug, Deserialize)]
+struct MinecraftAccessTokenClaims {
+    xuid: Option<String>,
+    xid: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct DeviceCodeResponse {

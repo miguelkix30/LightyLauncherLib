@@ -325,7 +325,6 @@ let instance = VersionBuilder::new(
     Loader::Vanilla,
     "",
     "1.21.1",
-    launcher_dir
 );
 ```
 
@@ -378,17 +377,10 @@ let instance = VersionBuilder::new(
 ```rust
 use lighty_launcher::core::AppState;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
+AppState::init("MyLauncher")?;
 
-let _app = AppState::new(
-    QUALIFIER.to_string(),
-    ORGANIZATION.to_string(),
-    APPLICATION.to_string(),
-)?;
-
-let launcher_dir = AppState::get_project_dirs();
+let data_dir = AppState::data_dir();
+let cache_dir = AppState::cache_dir();
 ```
 
 **Detailed docs**: [lighty-core](../crates/core/README.md)
@@ -445,7 +437,8 @@ Convenient re-exports of most commonly used types.
 use lighty_launcher::prelude::*;
 
 // Authentication
-Authenticator, UserProfile, OfflineAuth, MicrosoftAuth, AzuriomAuth
+Authenticator, UserProfile, AuthProvider, AuthError, UserRole,
+OfflineAuth, MicrosoftAuth, AzuriomAuth
 
 // Events (with "events" feature)
 EventBus, Event, AuthEvent, JavaEvent, LaunchEvent, LoaderEvent, CoreEvent,

@@ -69,11 +69,13 @@ pub struct UserProfile {
     pub username: String,             // Display name (required)
     pub uuid: String,                 // Minecraft UUID (required)
     pub access_token: Option<String>, // Session token
+    pub xuid: Option<String>,         // Xbox User ID (Microsoft auth only)
     pub email: Option<String>,        // Email address
     pub email_verified: bool,         // Verification status
     pub money: Option<f64>,           // Server credits/balance
     pub role: Option<UserRole>,       // Permissions/rank
     pub banned: bool,                 // Ban status
+    pub provider: AuthProvider,       // Which authenticator produced this profile
 }
 ```
 
@@ -85,11 +87,24 @@ pub struct UserProfile {
 | `username` | ✅ Input | ✅ From profile | ✅ From server |
 | `uuid` | ✅ Generated | ✅ From profile | ✅ From server |
 | `access_token` | ❌ None | ✅ MC token | ✅ Session token |
+| `xuid` | ❌ None | ✅ Decoded from MC JWT | ❌ None |
 | `email` | ❌ None | ❌ None | ✅ User email |
 | `email_verified` | `false` | `true` | ✅ From server |
 | `money` | ❌ None | ❌ None | ✅ From server |
 | `role` | ❌ None | ❌ None | ✅ From server |
 | `banned` | `false` | `false` | ✅ From server |
+| `provider` | `Offline` | `Microsoft { client_id, refresh_token }` | `Azuriom { base_url }` |
+
+The `provider` field drives the `${user_type}` launch placeholder:
+`Microsoft` → `"msa"`, `Azuriom` → `"mojang"`, `Offline`/`Custom` → `"legacy"`.
+
+For Microsoft, the `refresh_token` (issued by the `offline_access`
+scope) is captured inside the `provider` variant so persisting the
+whole `UserProfile` is enough to enable silent re-auth on subsequent
+launches via [`MicrosoftAuth::authenticate_with_refresh_token`]
+(documented in [`microsoft.md`](./microsoft.md#token-management)).
+The token lasts ≈ 90 days of inactivity and Microsoft rotates it on
+every refresh.
 
 ## Error Handling
 

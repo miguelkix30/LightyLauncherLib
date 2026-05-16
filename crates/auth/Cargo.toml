@@ -25,6 +25,9 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+# JWT decoding (Microsoft access_token carries the Xbox xuid claim)
+base64.workspace = true
+
 # Error Handling
 thiserror.workspace = true
 

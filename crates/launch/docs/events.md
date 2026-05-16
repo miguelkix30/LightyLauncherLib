@@ -188,17 +188,9 @@ use lighty_core::AppState;
 use lighty_launcher::prelude::*;
 use lighty_java::JavaDistribution;
 
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "MyLauncher";
-const APPLICATION: &str = "";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _app = AppState::new(
-        QUALIFIER.to_string(),
-        ORGANIZATION.to_string(),
-        APPLICATION.to_string(),
-    )?;
+    AppState::init("MyLauncher")?;
 
     let event_bus = EventBus::new(1000);
     let mut receiver = event_bus.subscribe();
@@ -239,13 +231,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let launcher_dir = AppState::get_project_dirs();
     let mut instance = VersionBuilder::new(
         "fabric-1.21",
         Loader::Fabric,
         "0.16.9",
         "1.21.1",
-        launcher_dir
     );
 
     let mut auth = OfflineAuth::new("Player");

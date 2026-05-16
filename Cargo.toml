@@ -105,9 +105,14 @@ memmap2 = "0.9.10"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 hex = "0.4.3"
+base64 = "0.22"
 
 # ---- Paths & Filenames ----
-directories = "6.0.0"
+# `dirs` instead of `directories`: same author/std but the API only
+# exposes the platform-canonical bases (data/config/cache/home), no
+# qualifier+organization+application triplet. We join the launcher
+# name ourselves — see `crates/core/src/app_state.rs`.
+dirs = "6.0.0"
 sanitize-filename = "0.6.0"
 path-absolutize = "3.1.1"
 
@@ -124,6 +129,11 @@ tokio-test = "0.4.5"
 tempfile = "3.27"
 criterion = { version = "0.8", features = ["html_reports"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+# Used by examples/auth/* to demonstrate persisting tokens in the OS
+# keychain (Linux Secret Service / macOS Keychain / Windows Credential Manager).
+# Examples-only — the lib itself does NOT depend on keyring (storage
+# policy is intentionally left to the consumer).
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
 
 # ============================================
 # MAIN PACKAGE DEPENDENCIES
@@ -141,7 +151,6 @@ lighty-version = { workspace = true }
 
 # Required for examples
 tokio = { workspace = true }
-directories = { workspace = true }
 once_cell = { workspace = true }
 tracing = { workspace = true, optional = true }
 
@@ -155,6 +164,10 @@ tempfile = { workspace = true }
 criterion = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
+keyring = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
 
 # ============================================
 # FEATURES - Optional activation
@@ -167,14 +180,24 @@ fabric = ["lighty-loaders/fabric"]
 quilt = ["lighty-loaders/quilt"]
 # lighty-launch is enabled so the installer can run NeoForge post-install processors
 neoforge = ["lighty-loaders/neoforge", "lighty-launch/neoforge"]
-# lighty-launch is enabled so the installer can run Forge post-install processors
+# lighty-launch is enabled so the installer can run Forge post-install
+# processors. The same feature flag also covers legacy Forge (1.5.2 →
+# 1.12.2) since the legacy parser lives inside the same crate path.
 forge = ["lighty-loaders/forge", "lighty-launch/forge"]
-# Legacy Forge (1.4 → 1.12.2) ships inside the same `forge` feature — no
-# extra dependencies are needed because the legacy era has no post-install
-# processors. This alias exists for example targets that opt in by name.
-forge_legacy = ["forge"]
 lighty_updater = ["lighty-loaders/lighty_updater"]
-all-loaders = ["lighty-loaders/all-loaders"]
+# Mod sources (Modrinth public API, CurseForge keyed API).
+# Each forwards into:
+#   - lighty-loaders: API clients + resolver
+#   - lighty-launch:  runner-side mod_resolver (event-aware bridge)
+#   - lighty-version: matching .with_modrinth() / .with_curseforge() methods
+modrinth = ["lighty-loaders/modrinth", "lighty-launch/modrinth", "lighty-version/modrinth"]
+curseforge = ["lighty-loaders/curseforge", "lighty-launch/curseforge", "lighty-version/curseforge"]
+all-mods = ["modrinth", "curseforge"]
+all-loaders = [
+    "lighty-loaders/all-loaders",
+    "lighty-launch/modrinth", "lighty-launch/curseforge",
+    "lighty-version/modrinth", "lighty-version/curseforge",
+]
 
 # Event system
 events = ["lighty-event", "lighty-auth/events", "lighty-launch/events"]
@@ -222,9 +245,7 @@ lto = "fat"            # Aggressive LTO
 # EXAMPLES
 # ============================================
 
-[[example]]
-name = "with_events"
-required-features = ["vanilla", "events", "tracing"]
+# --- Loaders (one example per loader, flat under examples/) ---
 
 [[example]]
 name = "vanilla"
@@ -232,32 +253,60 @@ required-features = ["vanilla", "tracing"]
 
 [[example]]
 name = "fabric"
-required-features = ["fabric","events", "tracing"]
+required-features = ["fabric", "tracing"]
 
 [[example]]
 name = "quilt"
 required-features = ["quilt", "tracing"]
 
 [[example]]
-name = "neoforge_before_1-20"
-required-features = ["neoforge", "tracing"]
-
-[[example]]
-name = "neoforge_after_1-21"
-required-features = ["neoforge", "tracing"]
+name = "neoforge"
+required-features = ["neoforge", "events", "tracing"]
 
 [[example]]
 name = "forge"
-required-features = ["forge", "tracing"]
+required-features = ["forge", "events", "tracing"]
 
 [[example]]
-name = "forge_legacy"
-required-features = ["forge", "events", "tracing"]
+name = "optifine"
+required-features = ["vanilla", "tracing"]
 
 [[example]]
 name = "lighty_updater"
 required-features = ["lighty_updater", "tracing"]
 
+# --- Mod fetching (Modrinth / CurseForge), under examples/mods/ ---
+
 [[example]]
-name = "optifine"
-required-features = ["vanilla", "tracing"]
+name = "modrinth"
+path = "examples/mods/modrinth.rs"
+required-features = ["modrinth", "fabric", "tracing"]
+
+[[example]]
+name = "curseforge"
+path = "examples/mods/curseforge.rs"
+required-features = ["curseforge", "fabric", "tracing"]
+
+# --- Full event-bus showcase, under examples/with_events/ ---
+
+[[example]]
+name = "with_events"
+path = "examples/with_events/events.rs"
+required-features = ["vanilla", "events", "tracing"]
+
+# --- Auth + persistent "remember me" via OS keyring, under examples/auth/ ---
+
+[[example]]
+name = "auth_microsoft"
+path = "examples/auth/microsoft.rs"
+required-features = ["events", "tracing"]
+
+[[example]]
+name = "auth_azuriom"
+path = "examples/auth/azuriom.rs"
+required-features = ["events", "tracing"]
+
+[[example]]
+name = "auth_custom"
+path = "examples/auth/custom.rs"
+required-features = ["events", "tracing"]

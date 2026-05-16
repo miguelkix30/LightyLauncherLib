@@ -9,7 +9,7 @@
 //! - Token verification
 //! - Logout
 
-use crate::{Authenticator, AuthError, AuthResult, UserProfile, UserRole};
+use crate::{Authenticator, AuthError, AuthProvider, AuthResult, UserProfile, UserRole};
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use serde::Deserialize;
 
@@ -176,6 +176,7 @@ impl Authenticator for AzuriomAuth {
                 username: azuriom_response.username,
                 uuid: azuriom_response.uuid,
                 access_token: Some(azuriom_response.access_token),
+                xuid: None,
                 email: Some(self.email.clone()),
                 email_verified: azuriom_response.email_verified.unwrap_or(true),
                 money: azuriom_response.money,
@@ -184,6 +185,7 @@ impl Authenticator for AzuriomAuth {
                     color: r.color,
                 }),
                 banned: azuriom_response.banned.unwrap_or(false),
+                provider: AuthProvider::Azuriom { base_url: self.base_url.clone() },
             })
         } else {
             // Parse error response
@@ -240,6 +242,7 @@ impl Authenticator for AzuriomAuth {
                 username: azuriom_response.username,
                 uuid: azuriom_response.uuid,
                 access_token: Some(azuriom_response.access_token),
+                xuid: None,
                 email: None, // Not returned by verify endpoint
                 email_verified: azuriom_response.email_verified.unwrap_or(true),
                 money: azuriom_response.money,
@@ -248,6 +251,7 @@ impl Authenticator for AzuriomAuth {
                     color: r.color,
                 }),
                 banned: azuriom_response.banned.unwrap_or(false),
+                provider: AuthProvider::Azuriom { base_url: self.base_url.clone() },
             })
         } else {
             lighty_core::trace_error!(status = %status, "Token verification failed");

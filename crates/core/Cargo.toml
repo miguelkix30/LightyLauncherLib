@@ -41,7 +41,7 @@ async_zip.workspace = true
 futures-util.workspace = true
 
 # Paths & Filenames
-directories.workspace = true
+dirs.workspace = true
 sanitize-filename.workspace = true
 path-absolutize.workspace = true
 
@@ -50,6 +50,7 @@ os_info.workspace = true
 
 # Utilities
 once_cell.workspace = true
+fastrand.workspace = true
 
 # Hashing
 sha1.workspace = true

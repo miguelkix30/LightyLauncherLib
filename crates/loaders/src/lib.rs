@@ -9,6 +9,7 @@
 pub mod loaders;
 pub mod utils;
 pub mod types;
+pub mod mods;
 
 // Re-export commonly used items (each gated on its feature)
 #[cfg(feature = "fabric")]
