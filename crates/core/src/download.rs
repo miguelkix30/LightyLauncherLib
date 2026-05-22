@@ -22,7 +22,7 @@ use std::path::Path;
 use crate::errors::{DownloadResult, DownloadError};
 use crate::{trace_debug};
 use tokio::fs;
-use crate::hosts::{HTTP_CLIENT, build_fallback_urls};
+use crate::hosts::{HTTP_CLIENT, RAW_HTTP_CLIENT, build_fallback_urls};
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 
 /// Downloads `url` to `path` without progress reporting.
@@ -34,35 +34,64 @@ pub async fn download_file_untracked(url: &str, path: impl AsRef<Path>) -> Downl
     let mut last_error = None;
 
     for candidate in build_fallback_urls(url) {
-        match HTTP_CLIENT
-            .get(&candidate)
-            .header(ACCEPT_ENCODING, "identity")
-            .send()
-            .await {
-            Ok(response) => match response.error_for_status() {
-                Ok(response) => {
-                    let content = response.bytes().await?;
-                    fs::write(&path, content).await?;
-                    return Ok(());
-                }
-                Err(e) => {
-                    last_error = Some(e);
-                }
-            },
+        match download_untracked_once(&HTTP_CLIENT, &candidate, &path).await {
+            Ok(_) => return Ok(()),
             Err(e) => {
+                let should_retry_raw = is_decode_error(&e);
                 last_error = Some(e);
+
+                if should_retry_raw {
+                    trace_debug!(
+                        url = %candidate,
+                        "Response decode failed; retrying download without automatic decompression"
+                    );
+
+                    match download_untracked_once(&RAW_HTTP_CLIENT, &candidate, &path).await {
+                        Ok(_) => return Ok(()),
+                        Err(raw_err) => {
+                            last_error = Some(raw_err);
+                        }
+                    }
+                }
             }
         }
     }
 
-    Err(last_error
-        .map(DownloadError::Http)
-        .unwrap_or_else(|| {
-            DownloadError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "No candidates available for download",
-            ))
-        }))
+    Err(last_error.unwrap_or_else(|| {
+        DownloadError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "No candidates available for download",
+        ))
+    }))
+}
+
+fn is_decode_error(err: &DownloadError) -> bool {
+    match err {
+        DownloadError::Http(http_err) => http_err.is_decode(),
+        _ => false,
+    }
+}
+
+async fn download_untracked_once(
+    client: &reqwest::Client,
+    url: &str,
+    path: &Path,
+) -> DownloadResult<()> {
+    let response = client
+        .get(url)
+        .header(ACCEPT_ENCODING, "identity")
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let content = response.bytes().await?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+
+    fs::write(path, content).await?;
+    Ok(())
 }
 
 /// Downloads `url` into a `Vec<u8>`, invoking `on_progress(current, total)`
@@ -80,17 +109,25 @@ where
     let mut last_error = None;
 
     for candidate in build_fallback_urls(url) {
-        let mut response = match HTTP_CLIENT
-            .get(candidate.trim())
-            .header(ACCEPT_ENCODING, "identity")
-            .send()
-            .await
-            .and_then(|resp| resp.error_for_status())
-        {
+        let mut response = match download_streaming_once(&HTTP_CLIENT, candidate.trim()).await {
             Ok(response) => response,
             Err(e) => {
-                last_error = Some(e);
-                continue;
+                if is_decode_error(&e) {
+                    trace_debug!(
+                        url = %candidate,
+                        "Response decode failed; retrying streaming download without automatic decompression"
+                    );
+                    match download_streaming_once(&RAW_HTTP_CLIENT, candidate.trim()).await {
+                        Ok(response) => response,
+                        Err(raw_err) => {
+                            last_error = Some(raw_err);
+                            continue;
+                        }
+                    }
+                } else {
+                    last_error = Some(e);
+                    continue;
+                }
             }
         };
 
@@ -128,12 +165,22 @@ where
         return Ok(output);
     }
 
-    Err(last_error
-        .map(DownloadError::Http)
-        .unwrap_or_else(|| {
-            DownloadError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "No candidates available for download",
-            ))
-        }))
+    Err(last_error.unwrap_or_else(|| {
+        DownloadError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "No candidates available for download",
+        ))
+    }))
+}
+
+async fn download_streaming_once(
+    client: &reqwest::Client,
+    url: &str,
+) -> DownloadResult<reqwest::Response> {
+    Ok(client
+        .get(url)
+        .header(ACCEPT_ENCODING, "identity")
+        .send()
+        .await?
+        .error_for_status()?)
 }

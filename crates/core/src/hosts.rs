@@ -41,6 +41,32 @@ pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
         .expect("Failed to build HTTP client with default configuration - this should never fail")
 });
 
+    /// Fallback client that disables automatic response decompression.
+    ///
+    /// Some mod-loader or installer endpoints incorrectly advertise a content
+    /// encoding that does not match the payload. When that happens, the normal
+    /// client can fail with a response-body decode error. This client is used as
+    /// a last resort so we can still save the raw bytes when the server returns
+    /// an already-plain response or a mislabeled body.
+    pub static RAW_HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
+        Client::builder()
+        .pool_max_idle_per_host(100)
+        .pool_idle_timeout(Some(Duration::from_secs(90)))
+        .http2_initial_stream_window_size(Some(2 * 1024 * 1024))
+        .http2_initial_connection_window_size(Some(4 * 1024 * 1024))
+        .http2_adaptive_window(true)
+        .http2_max_frame_size(Some(16 * 1024))
+        .tcp_keepalive(Some(Duration::from_secs(60)))
+        .tcp_nodelay(true)
+        .timeout(Duration::from_secs(60))
+        .connect_timeout(Duration::from_secs(5))
+        .gzip(false)
+        .brotli(false)
+        .zstd(false)
+        .build()
+        .expect("Failed to build raw HTTP client - this should never fail")
+    });
+
 fn env_base(var: &str) -> Option<String> {
     env::var(var)
         .ok()
