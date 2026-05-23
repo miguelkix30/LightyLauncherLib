@@ -121,7 +121,9 @@ pub fn build_fallback_urls(original: &str) -> Vec<String> {
     }
 
     if host.eq_ignore_ascii_case("meta.fabricmc.net") && !path.is_empty() {
-        push_fastmcmirror(&mut urls, "https://bmclapi2.bangbang93.com/fabric-meta", path);
+        push_fastmcmirror(&mut urls, "https://meta2.fabricmc.net", path);
+        // NOTE: bmclapi2.bangbang93.com/fabric-meta returns 404 "未找到fabric meta"
+        // Not supported by this mirror, only use if explicitly configured via env var
         if let Some(base) = env_base("LIGHTY_MIRROR_FABRIC_META") {
             urls.push(join_base_and_path(&base, path));
         }
