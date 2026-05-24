@@ -67,6 +67,35 @@ pub static HTTP_CLIENT: Lazy<Client> = Lazy::new(|| {
         .expect("Failed to build raw HTTP client - this should never fail")
     });
 
+    /// Third fallback client using Cloudflare's 1.1.1.1 DNS proxy.
+    ///
+    /// When standard DNS resolution or direct connections fail, this client
+    /// routes all traffic through 1.1.1.1 (Cloudflare's DNS proxy) to bypass
+    /// potential DNS hijacking, ISP blocks, or network restrictions.
+    /// This client preserves automatic decompression like the normal client.
+    pub static CLOUDFLARE_PROXY_CLIENT: Lazy<Client> = Lazy::new(|| {
+        let proxy = reqwest::Proxy::http("http://1.1.1.1:80")
+            .expect("Failed to build Cloudflare proxy");
+
+        Client::builder()
+            .proxy(proxy)
+            .pool_max_idle_per_host(100)
+            .pool_idle_timeout(Some(Duration::from_secs(90)))
+            .http2_initial_stream_window_size(Some(2 * 1024 * 1024))
+            .http2_initial_connection_window_size(Some(4 * 1024 * 1024))
+            .http2_adaptive_window(true)
+            .http2_max_frame_size(Some(16 * 1024))
+            .tcp_keepalive(Some(Duration::from_secs(60)))
+            .tcp_nodelay(true)
+            .timeout(Duration::from_secs(60))
+            .connect_timeout(Duration::from_secs(10))
+            .zstd(true)
+            .gzip(true)
+            .brotli(true)
+            .build()
+            .expect("Failed to build Cloudflare proxy HTTP client - this should never fail")
+    });
+
 fn env_base(var: &str) -> Option<String> {
     env::var(var)
         .ok()
