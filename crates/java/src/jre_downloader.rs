@@ -8,49 +8,44 @@
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+
 use crate::errors::{JreError, JreResult};
 use path_absolutize::Absolutize;
 use tokio::fs;
 use tokio::time::{sleep, Duration};
 
-use lighty_core::system::{OperatingSystem, OS};
 use lighty_core::download::download_file;
-use lighty_core::DownloadError;
 use lighty_core::extract::{tar_gz_extract, zip_extract};
+use lighty_core::system::{OperatingSystem, OS};
+use lighty_core::DownloadError;
 
 use super::JavaDistribution;
 
 #[cfg(feature = "events")]
-use lighty_event::{EventBus, Event, JavaEvent};
+use lighty_event::{Event, EventBus, JavaEvent};
+
+fn is_transient_installation_io_error(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::PermissionDenied
+            | std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::Interrupted
+    ) || matches!(err.raw_os_error(), Some(5) | Some(32))
+}
 
 /// Locates an existing Java binary in the runtime directory
-///
-/// Searches for the java executable in the expected directory structure
-/// based on the distribution and version. Automatically uses fallback
-/// distribution for unsupported version/platform combinations.
-///
-/// # Arguments
-/// * `runtimes_folder` - Base directory containing installed JREs
-/// * `distribution` - The Java distribution to locate
-/// * `version` - Java major version number
-///
-/// # Returns
-/// Absolute path to the java binary, or error if not found
 pub async fn find_java_binary(
     runtimes_folder: &Path,
     distribution: &JavaDistribution,
     version: &u8,
 ) -> JreResult<PathBuf> {
-    // Check if we need a fallback distribution
     let effective_distribution = distribution
         .get_fallback(*version)
         .unwrap_or_else(|| distribution.clone());
 
     let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
-
     let binary_path = locate_binary_in_directory(&runtime_dir).await?;
 
-    // Ensure execution permissions on Unix systems
     #[cfg(unix)]
     ensure_executable_permissions(&binary_path).await?;
 
@@ -58,16 +53,6 @@ pub async fn find_java_binary(
 }
 
 /// Downloads and installs a JRE to the specified directory (with events feature)
-///
-/// # Arguments
-/// * `runtimes_folder` - Base directory for JRE installation
-/// * `distribution` - Java distribution to download
-/// * `version` - Java major version number
-/// * `on_progress` - Callback for download progress (bytes_downloaded, total_bytes)
-/// * `event_bus` - Optional event bus for emitting events
-///
-/// # Returns
-/// Path to the installed java binary
 #[cfg(feature = "events")]
 pub async fn jre_download<F>(
     runtimes_folder: &Path,
@@ -79,14 +64,11 @@ pub async fn jre_download<F>(
 where
     F: Fn(u64, u64),
 {
-    // Check if we need a fallback distribution
     let effective_distribution = distribution
         .get_fallback(*version)
         .unwrap_or_else(|| distribution.clone());
 
     let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
-
-    // Clean existing installation (retry on transient IO errors)
     prepare_installation_directory_with_retry(&runtime_dir).await?;
 
     let download_urls = build_download_candidates(&effective_distribution, version)
@@ -96,10 +78,8 @@ where
         .first()
         .ok_or_else(|| JreError::Download("No download URLs available".to_string()))?;
 
-    // Emit JavaDownloadStarted event
     let mut expected_total_bytes = 0;
     if let Some(bus) = event_bus {
-        // Get total bytes first
         let response = lighty_core::hosts::HTTP_CLIENT
             .get(primary_url)
             .header("accept-encoding", "identity")
@@ -128,7 +108,6 @@ where
         }));
     }
 
-    // Download JRE archive with progress tracking
     let archive_bytes = {
         let event_bus_ref = event_bus;
         let progress_cb = |current: u64, total: u64| {
@@ -136,11 +115,7 @@ where
 
             if let Some(bus) = event_bus_ref {
                 if current > 0 {
-                    let effective_total = if total > 0 {
-                        total
-                    } else {
-                        expected_total_bytes
-                    };
+                    let effective_total = if total > 0 { total } else { expected_total_bytes };
                     let percent = if effective_total > 0 {
                         let raw = (current as f64 / effective_total as f64) * 100.0;
                         raw.min(100.0)
@@ -158,33 +133,20 @@ where
         download_with_retries(&download_urls, &progress_cb).await?
     };
 
-    // Emit JavaDownloadCompleted event
     if let Some(bus) = event_bus {
         bus.emit(Event::Java(JavaEvent::JavaDownloadCompleted {
             distribution: effective_distribution.get_name().to_string(),
             version: *version,
         }));
-    }
-
-    // Emit JavaExtractionStarted event
-    if let Some(bus) = event_bus {
         bus.emit(Event::Java(JavaEvent::JavaExtractionStarted {
             distribution: effective_distribution.get_name().to_string(),
             version: *version,
         }));
     }
 
-    // Extract archive based on OS
-    extract_archive(
-        &archive_bytes,
-        &runtime_dir,
-        event_bus,
-    ).await?;
-
-    // Locate and return the java binary
+    extract_archive(&archive_bytes, &runtime_dir, event_bus).await?;
     let binary_path = find_java_binary(runtimes_folder, &effective_distribution, version).await?;
 
-    // Emit JavaExtractionCompleted event
     if let Some(bus) = event_bus {
         bus.emit(Event::Java(JavaEvent::JavaExtractionCompleted {
             distribution: effective_distribution.get_name().to_string(),
@@ -197,15 +159,6 @@ where
 }
 
 /// Downloads and installs a JRE to the specified directory (without events feature)
-///
-/// # Arguments
-/// * `runtimes_folder` - Base directory for JRE installation
-/// * `distribution` - Java distribution to download
-/// * `version` - Java major version number
-/// * `on_progress` - Callback for download progress (bytes_downloaded, total_bytes)
-///
-/// # Returns
-/// Path to the installed java binary
 #[cfg(not(feature = "events"))]
 pub async fn jre_download<F>(
     runtimes_folder: &Path,
@@ -216,21 +169,17 @@ pub async fn jre_download<F>(
 where
     F: Fn(u64, u64),
 {
-    // Check if we need a fallback distribution
     let effective_distribution = distribution
         .get_fallback(*version)
         .unwrap_or_else(|| distribution.clone());
 
     let runtime_dir = build_runtime_path(runtimes_folder, &effective_distribution, version);
-
-    // Clean existing installation (retry on transient IO errors)
     prepare_installation_directory_with_retry(&runtime_dir).await?;
 
     let download_urls = build_download_candidates(&effective_distribution, version)
         .await
         .map_err(|e| JreError::Download(format!("Failed to get download URL: {}", e)))?;
 
-    // Download JRE archive
     let archive_bytes = {
         let progress_cb = |current: u64, total: u64| {
             on_progress(current, total);
@@ -239,10 +188,7 @@ where
         download_with_retries(&download_urls, &progress_cb).await?
     };
 
-    // Extract archive based on OS
     extract_archive(&archive_bytes, &runtime_dir).await?;
-
-    // Locate and return the java binary
     find_java_binary(runtimes_folder, &effective_distribution, version).await
 }
 
@@ -275,19 +221,16 @@ async fn build_download_candidates(
     Ok(urls)
 }
 
-/// Constructs the runtime installation path for a given distribution and version
 fn build_runtime_path(
     runtimes_folder: &Path,
     distribution: &JavaDistribution,
     version: &u8,
 ) -> PathBuf {
-    // Optimized: Build path directly without intermediate String allocation
     let mut path = runtimes_folder.to_path_buf();
     path.push(format!("{}_{}", distribution.get_name(), version));
     path
 }
 
-/// Prepares the installation directory by removing existing files
 async fn prepare_installation_directory(runtime_dir: &Path) -> JreResult<()> {
     if runtime_dir.exists() {
         fs::remove_dir_all(runtime_dir).await?;
@@ -305,10 +248,7 @@ async fn prepare_installation_directory_with_retry(runtime_dir: &Path) -> JreRes
     for attempt in 1..=MAX_IO_RETRIES {
         match prepare_installation_directory(runtime_dir).await {
             Ok(()) => return Ok(()),
-            Err(JreError::Io(err))
-                if err.kind() == std::io::ErrorKind::PermissionDenied
-                    && attempt < MAX_IO_RETRIES =>
-            {
+            Err(JreError::Io(err)) if is_transient_installation_io_error(&err) && attempt < MAX_IO_RETRIES => {
                 last_error = Some(JreError::Io(err));
                 lighty_core::trace_warn!(
                     "[Java] Permission denied preparing {:?}, retrying ({}/{})",
@@ -327,10 +267,7 @@ async fn prepare_installation_directory_with_retry(runtime_dir: &Path) -> JreRes
     }))
 }
 
-async fn download_with_retries<F>(
-    download_urls: &[String],
-    on_progress: &F,
-) -> JreResult<Vec<u8>>
+async fn download_with_retries<F>(download_urls: &[String], on_progress: &F) -> JreResult<Vec<u8>>
 where
     F: Fn(u64, u64),
 {
@@ -346,10 +283,7 @@ where
             match result {
                 Ok(bytes) => return Ok(bytes),
                 Err(err) => {
-                    let should_retry = matches!(
-                        err,
-                        DownloadError::Io(ref io) if io.kind() == std::io::ErrorKind::PermissionDenied
-                    );
+                    let should_retry = matches!(err, DownloadError::Io(ref io) if is_transient_installation_io_error(io));
 
                     last_error = Some(err);
 

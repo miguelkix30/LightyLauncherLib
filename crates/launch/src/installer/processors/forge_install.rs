@@ -17,6 +17,8 @@
 
 use std::path::PathBuf;
 
+use lighty_core::download::download_file_untracked;
+use lighty_core::mkdir;
 use lighty_loaders::types::VersionInfo;
 use lighty_loaders::utils::error::QueryError;
 use lighty_loaders::utils::forge_installer::ForgeInstallProfile;
@@ -55,12 +57,15 @@ pub(crate) async fn run_forge_install_processors<V: VersionInfo>(
 
     lighty_core::trace_info!(loader = "forge", "Checking if processors need to run");
 
+    ensure_installer_cached(
+        version,
+        "forge",
+        build_installer_url(version),
+        installer_cache_path(version),
+    )
+        .await?;
+
     let installer_path = installer_cache_path(version);
-    if !installer_path.exists() {
-        return Err(QueryError::Conversion {
-            message: "Installer JAR not found. Run fetch_full_data first.".to_string(),
-        });
-    }
 
     // Some Forge versions ship runtime artifacts bundled at `/maven/...`
     // inside the installer (forge-shim.jar in 1.21+, forge-universal.jar
@@ -123,12 +128,15 @@ pub(crate) async fn run_neoforge_install_processors<V: VersionInfo>(
 
     lighty_core::trace_info!(loader = "neoforge", "Checking if processors need to run");
 
+    ensure_installer_cached(
+        version,
+        "neoforge",
+        build_installer_url(version),
+        installer_cache_path(version),
+    )
+        .await?;
+
     let installer_path = installer_cache_path(version);
-    if !installer_path.exists() {
-        return Err(QueryError::Conversion {
-            message: "Installer JAR not found. Run fetch_full_data first.".to_string(),
-        });
-    }
 
     let installer_url = build_installer_url(version);
     let marker_path = processors_marker_path(version, ".neoforge");
@@ -165,5 +173,55 @@ pub(crate) async fn run_neoforge_install_processors<V: VersionInfo>(
     }
 
     lighty_core::trace_info!(loader = "neoforge", "Processors completed successfully");
+    Ok(())
+}
+
+async fn ensure_installer_cached<V: VersionInfo>(
+    _version: &V,
+    loader_name: &str,
+    installer_url: String,
+    installer_path: PathBuf,
+) -> Result<()> {
+    if installer_path.exists() {
+        return Ok(());
+    }
+
+    if let Some(parent) = installer_path.parent() {
+        mkdir!(parent);
+    }
+
+    lighty_core::trace_warn!(
+        path = ?installer_path,
+        loader = loader_name,
+        "Installer JAR missing before processor phase; re-downloading"
+    );
+
+    download_file_untracked(&installer_url, &installer_path)
+        .await
+        .map_err(|e| QueryError::Conversion {
+            message: format!(
+                "Installer JAR missing and could not be restored automatically: {}",
+                e
+            ),
+        })?;
+
+    let expected_sha1 = fetch_maven_sha1(&installer_url)
+        .await
+        .ok_or_else(|| QueryError::Conversion {
+            message: "Failed to fetch SHA1 for installer JAR".to_string(),
+        })?;
+
+    lighty_core::verify_file_sha1_sync(&installer_path, &expected_sha1).map_err(|e| {
+        QueryError::Conversion {
+            message: format!("Downloaded installer has invalid SHA1: {}", e),
+        }
+    })?;
+
+    lighty_core::trace_info!(
+        path = ?installer_path,
+        loader = loader_name,
+        "Restored missing installer JAR successfully"
+    );
+
     Ok(())
 }
