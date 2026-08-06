@@ -59,6 +59,7 @@ tokio = { version = "1.52", features = [
     "macros",           #for #[tokio::main], #[tokio::test]
     "fs",               #for Filesystem async
     "io-util",          #for AsyncRead/Write utilities
+    "net",              #for localhost OAuth callback listener
     "process",          #for spawning the Java process
     "sync",             #for oneshot, RwLock
     "time",             #for sleep, timeout

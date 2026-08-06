@@ -3,8 +3,9 @@
 
 //! Microsoft OAuth 2.0 authentication for Minecraft
 //!
-//! Implements the Device Code Flow for authenticating Minecraft accounts via Microsoft.
-//! This is a multi-step process:
+//! Implements two Microsoft login flows:
+//!
+//! **Device Code Flow** — headless; the user opens a URL and types a code.
 //! 1. Request a device code
 //! 2. User authorizes via browser
 //! 3. Poll for token
@@ -12,26 +13,42 @@
 //! 5. Exchange for XSTS token
 //! 6. Exchange for Minecraft token
 //! 7. Fetch Minecraft profile
+//!
+//! **Browser OAuth flow** — Authorization Code + PKCE with a localhost
+//! callback ([`MicrosoftAuth::authenticate_with_browser`]); the user logs
+//! in directly in the browser and is redirected back to the launcher.
+//! Shares steps 4–7 above.
 
 use crate::{Authenticator, AuthError, AuthProvider, AuthResult, UserProfile};
+use base64::Engine;
 use lighty_core::hosts::HTTP_CLIENT as CLIENT;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::time::sleep;
 
 #[cfg(feature = "events")]
 use lighty_event::{EventBus, Event, AuthEvent};
 
 const MS_AUTH_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
+const MS_AUTHORIZE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const XBOX_AUTH_URL: &str = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_AUTH_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_AUTH_URL: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
 const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 
-/// Microsoft authenticator using Device Code Flow
+/// Microsoft authenticator for Device Code Flow and browser OAuth.
 ///
-/// This authentication method is suitable for CLI applications and launchers.
-/// The user will need to visit a URL and enter a code to authorize.
+/// The Device Code Flow is suitable for CLI applications and headless
+/// launchers: the user visits a URL and enters a code. The browser flow
+/// ([`MicrosoftAuth::authenticate_with_browser`]) sends the user straight
+/// to Microsoft's login page and catches the redirect on a localhost port.
 ///
 /// # Example
 /// ```no_run
@@ -55,6 +72,8 @@ const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profil
 pub struct MicrosoftAuth {
     client_id: String,
     device_code_callback: Option<Box<dyn Fn(&str, &str) + Send + Sync>>,
+    browser_auth_url_callback: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    browser_cancel_flag: Option<Arc<AtomicBool>>,
     poll_interval: Duration,
     timeout: Duration,
 }
@@ -68,6 +87,8 @@ impl MicrosoftAuth {
         Self {
             client_id: client_id.into(),
             device_code_callback: None,
+            browser_auth_url_callback: None,
+            browser_cancel_flag: None,
             poll_interval: Duration::from_secs(5),
             timeout: Duration::from_secs(300), // 5 minutes
         }
@@ -82,6 +103,23 @@ impl MicrosoftAuth {
         F: Fn(&str, &str) + Send + Sync + 'static,
     {
         self.device_code_callback = Some(Box::new(callback));
+    }
+
+    /// Set a callback invoked with the full authorization URL before the
+    /// browser flow starts. The consumer typically opens it in the default
+    /// browser and renders a "waiting…" screen.
+    pub fn set_browser_auth_url_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        self.browser_auth_url_callback = Some(Box::new(callback));
+    }
+
+    /// Provide a shared cancellation flag; when set to `true` the browser
+    /// flow aborts with [`AuthError::Cancelled`]. Reset it before starting
+    /// a new flow.
+    pub fn set_browser_cancel_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.browser_cancel_flag = Some(flag);
     }
 
     /// Set the polling interval
@@ -292,6 +330,243 @@ impl MicrosoftAuth {
         lighty_core::trace_info!(username = %profile.name, uuid = %profile.id, "Minecraft profile obtained");
 
         Ok(profile)
+    }
+
+    /// Browser-based login using Authorization Code + PKCE.
+    ///
+    /// Builds the Azure authorize URL, hands it to the
+    /// `set_browser_auth_url_callback` callback (the consumer opens it in
+    /// the default browser), then listens on
+    /// `http://{callback_host}:{callback_port}{callback_path}` for the
+    /// redirect. Exchanges the code for a token and runs the same
+    /// Xbox → XSTS → Minecraft chain as the device-code flow.
+    ///
+    /// The redirect URI **must** be registered in the Azure app
+    /// registration for the client id and **must** use `localhost`
+    /// (e.g. `http://localhost:3031/microsoft/callback`) — Microsoft
+    /// no longer accepts numeric loopback IPs (e.g. `127.0.0.1`) as
+    /// HTTP redirect URIs. The local listener is bound to `127.0.0.1`,
+    /// which is where browsers resolve `localhost` for the callback.
+    pub async fn authenticate_with_browser(
+        &mut self,
+        callback_host: &str,
+        callback_port: u16,
+        callback_path: &str,
+        #[cfg(feature = "events")] event_bus: Option<&EventBus>,
+    ) -> AuthResult<UserProfile> {
+        #[cfg(feature = "events")]
+        if let Some(bus) = event_bus {
+            bus.emit(Event::Auth(AuthEvent::AuthenticationStarted {
+                provider: "Microsoft".to_string(),
+            }));
+        }
+
+        let state = Self::random_urlsafe(32);
+        let code_verifier = Self::random_urlsafe(64);
+        let code_challenge = Self::pkce_challenge(&code_verifier);
+        let redirect_uri = format!("http://{}:{}{}", callback_host, callback_port, callback_path);
+
+        let auth_url = reqwest::Url::parse_with_params(
+            MS_AUTHORIZE_URL,
+            &[
+                ("client_id", self.client_id.as_str()),
+                ("response_type", "code"),
+                ("redirect_uri", redirect_uri.as_str()),
+                ("response_mode", "query"),
+                ("scope", "XboxLive.signin offline_access"),
+                ("state", state.as_str()),
+                ("code_challenge", code_challenge.as_str()),
+                ("code_challenge_method", "S256"),
+                ("prompt", "select_account"),
+            ],
+        )
+        .map_err(|e| AuthError::Custom(format!("Failed to build authorize URL: {}", e)))?
+        .to_string();
+
+        if let Some(callback) = &self.browser_auth_url_callback {
+            callback(&auth_url);
+        } else {
+            lighty_core::trace_warn!("No browser auth URL callback set - user won't see the authorization URL");
+        }
+
+        let cancel_flag = self.browser_cancel_flag.clone();
+
+        let (code, returned_state) = Self::await_browser_callback(
+            callback_host,
+            callback_port,
+            callback_path,
+            &state,
+            self.timeout,
+            cancel_flag.as_ref(),
+        )
+        .await?;
+
+        if returned_state.as_deref() != Some(&state) {
+            return Err(AuthError::Custom("State mismatch in OAuth callback".into()));
+        }
+
+        let ms_token = self
+            .exchange_authorization_code(&code, &redirect_uri, &code_verifier)
+            .await?;
+
+        self.finalize_from_ms_token(
+            ms_token,
+            #[cfg(feature = "events")] event_bus,
+        ).await
+    }
+
+    /// Exchange the authorization code for a Microsoft token.
+    async fn exchange_authorization_code(
+        &self,
+        code: &str,
+        redirect_uri: &str,
+        code_verifier: &str,
+    ) -> AuthResult<MicrosoftTokenResponse> {
+        lighty_core::trace_debug!("Exchanging authorization code for Microsoft token");
+
+        let response = CLIENT
+            .post(&format!("{}/token", MS_AUTH_URL))
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("client_id", &self.client_id),
+                ("code", code),
+                ("redirect_uri", redirect_uri),
+                ("code_verifier", code_verifier),
+                ("scope", "XboxLive.signin offline_access"),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            lighty_core::trace_error!(error = %error_text, "Failed to exchange authorization code");
+            return Err(AuthError::InvalidResponse(error_text));
+        }
+
+        let token: MicrosoftTokenResponse = response.json().await?;
+        lighty_core::trace_info!("Microsoft token obtained via browser OAuth");
+
+        Ok(token)
+    }
+
+    /// Bind the localhost callback listener and wait for the OAuth
+    /// redirect. Returns `(code, state)`.
+    async fn await_browser_callback(
+        host: &str,
+        port: u16,
+        path: &str,
+        expected_state: &str,
+        timeout: Duration,
+        cancel_flag: Option<&Arc<AtomicBool>>,
+    ) -> AuthResult<(String, Option<String>)> {
+        // Bind the IPv4 loopback explicitly. The redirect URI advertises
+        // `localhost` (required by Microsoft), which browsers resolve to
+        // 127.0.0.1 (falling back quickly to IPv4 if they try ::1 first).
+        let listener = TcpListener::bind(("127.0.0.1", port))
+            .await
+            .map_err(|e| {
+                AuthError::Custom(format!(
+                    "No se pudo abrir el puerto de callback {}:{}: {}",
+                    host, port, e
+                ))
+            })?;
+
+        let start = std::time::Instant::now();
+        let (mut socket, _) = loop {
+            if start.elapsed() > timeout {
+                return Err(AuthError::Timeout);
+            }
+            if let Some(flag) = cancel_flag {
+                if flag.load(Ordering::SeqCst) {
+                    return Err(AuthError::Cancelled);
+                }
+            }
+            match tokio::time::timeout(Duration::from_millis(300), listener.accept()).await {
+                Ok(Ok(tuple)) => break tuple,
+                Ok(Err(e)) => {
+                    return Err(AuthError::Custom(format!(
+                        "No se recibió callback OAuth: {}",
+                        e
+                    )))
+                }
+                Err(_) => continue,
+            }
+        };
+
+        let mut buffer = vec![0u8; 8192];
+        let n = socket.read(&mut buffer).await?;
+        let request = String::from_utf8_lossy(&buffer[..n]);
+        let first_line = request.lines().next().unwrap_or_default();
+        let request_target = first_line.split_whitespace().nth(1).unwrap_or("/");
+
+        let callback_url = format!("http://{}:{}{}", host, port, request_target);
+        let parsed = reqwest::Url::parse(&callback_url)
+            .map_err(|e| AuthError::Custom(format!("No se pudo parsear callback URL: {}", e)))?;
+
+        let mut code: Option<String> = None;
+        let mut state: Option<String> = None;
+        let mut error: Option<String> = None;
+        for (key, value) in parsed.query_pairs() {
+            match key.as_ref() {
+                "code" => code = Some(value.to_string()),
+                "state" => state = Some(value.to_string()),
+                "error" => error = Some(value.to_string()),
+                _ => {}
+            }
+        }
+
+        let request_path = parsed.path().to_string();
+
+        let (status_line, heading) = if let Some(err) = error {
+            (
+                "HTTP/1.1 400 Bad Request\r\n",
+                format!("Error en autenticación Microsoft: {}", err),
+            )
+        } else if request_path != path {
+            ("HTTP/1.1 404 Not Found\r\n", "Ruta de callback no válida".to_string())
+        } else if state.as_deref() != Some(expected_state) {
+            ("HTTP/1.1 400 Bad Request\r\n", "Parámetro state inválido".to_string())
+        } else if code.is_none() {
+            (
+                "HTTP/1.1 400 Bad Request\r\n",
+                "Código de autorización no encontrado".to_string(),
+            )
+        } else {
+            (
+                "HTTP/1.1 200 OK\r\n",
+                "Microsoft vinculado correctamente. Ya puedes volver al launcher.".to_string(),
+            )
+        };
+
+        let html = format!(
+            "<!DOCTYPE html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Miguelki Launcher</title></head><body style=\"background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0\"><div style=\"text-align:center\"><h2>{}</h2><p>Esta pestaña se puede cerrar.</p></div></body></html>",
+            heading
+        );
+        let response = format!(
+            "{}Content-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            status_line,
+            html.len(),
+            html
+        );
+
+        socket.write_all(response.as_bytes()).await?;
+
+        code.ok_or_else(|| AuthError::Custom("No se recibió código OAuth de Microsoft".into()))
+            .map(|c| (c, state))
+    }
+
+    /// Random URL-safe string for PKCE (`state` / `code_verifier`).
+    fn random_urlsafe(len: usize) -> String {
+        let mut rng = fastrand::Rng::new();
+        let mut bytes = vec![0u8; len];
+        rng.fill(&mut bytes);
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&bytes)
+    }
+
+    /// PKCE S256 challenge derived from a `code_verifier`.
+    fn pkce_challenge(verifier: &str) -> String {
+        let digest = Sha256::digest(verifier.as_bytes());
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
     }
 
     /// Refreshes a Microsoft access-token using the long-lived refresh
