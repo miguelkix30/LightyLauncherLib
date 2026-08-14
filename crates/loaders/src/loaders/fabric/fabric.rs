@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use super::fabric_metadata::FabricMetaData;
 use async_trait::async_trait;
 use lighty_core::hosts::{HTTP_CLIENT as CLIENT, build_fallback_urls};
+use lighty_core::hosts::prism_meta_url;
 use futures::future::join_all;
 use std::collections::HashMap;
 use serde::de::DeserializeOwned;
@@ -44,6 +45,14 @@ impl Query for FabricQuery {
     }
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<FabricMetaData> {
+        let prism_url = prism_meta_url("net.fabricmc.fabric-loader", version.loader_version());
+        lighty_core::trace_debug!(url = %prism_url, loader = "fabric", "Trying PrismLauncher metadata first");
+
+        if let Ok(manifest) = fetch_json_with_fallback(&prism_url).await {
+            lighty_core::trace_info!(loader = "fabric", "Loaded Fabric metadata from PrismLauncher");
+            return Ok(manifest);
+        }
+
         let manifest_url = format!(
             "{}/{}/{}/profile/json",
             FABRIC_META,

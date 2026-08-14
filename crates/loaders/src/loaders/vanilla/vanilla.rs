@@ -12,6 +12,7 @@ use crate::types::version_metadata::
 };
 use crate::types::VersionInfo;
 use lighty_core::hosts::{HTTP_CLIENT as CLIENT, build_fallback_urls};
+use lighty_core::hosts::prism_meta_url;
 use serde::de::DeserializeOwned;
 
 pub type Result<T> = std::result::Result<T, QueryError>;
@@ -74,6 +75,14 @@ impl Query for VanillaQuery {
     // }
 
     async fn fetch_full_data<V: VersionInfo>(version: &V) -> Result<VanillaMetaData> {
+        let prism_url = prism_meta_url("net.minecraft", version.minecraft_version());
+        lighty_core::trace_info!(url = %prism_url, loader = "vanilla", "Trying PrismLauncher metadata first");
+
+        if let Ok(vanilla_metadata) = fetch_json_with_fallback(&prism_url).await {
+            lighty_core::trace_info!(loader = "vanilla", "Loaded vanilla metadata from PrismLauncher");
+            return Ok(vanilla_metadata);
+        }
+
         lighty_core::trace_info!("Fetching manifest from {}", PISTON_META_MANIFEST_URL);
 
         let manifest: PistonMetaManifest = fetch_json_with_fallback(PISTON_META_MANIFEST_URL).await?;
