@@ -399,13 +399,18 @@ fn extract_libraries_from_version_meta(version_meta: &ForgeVersionManifest) -> V
 /// Exposed so the launch crate can derive the SHA1-sidecar URL when it
 /// drives the install-processor pipeline.
 pub fn build_installer_url<V: VersionInfo>(version: &V) -> String {
+    let mc = version.minecraft_version();
+    let loader_ver = version.loader_version();
+    let full_ver = if loader_ver.starts_with(&format!("{}-", mc)) {
+        loader_ver.to_string()
+    } else {
+        format!("{}-{}", mc, loader_ver)
+    };
     format!(
-        "{}/net/minecraftforge/forge/{}-{}/forge-{}-{}-installer.jar",
+        "{}/net/minecraftforge/forge/{}/forge-{}-installer.jar",
         FORGE_MAVEN,
-        version.minecraft_version(),
-        version.loader_version(),
-        version.minecraft_version(),
-        version.loader_version(),
+        full_ver,
+        full_ver,
     )
 }
 
@@ -414,10 +419,17 @@ pub fn build_installer_url<V: VersionInfo>(version: &V) -> String {
 /// Same naming as legacy ([`super::forge_legacy::legacy_installer_path`])
 /// so both eras share one cached file. Exposed for the launch crate.
 pub fn installer_cache_path<V: VersionInfo>(version: &V) -> PathBuf {
+    let mc = version.minecraft_version();
+    let loader_ver = version.loader_version();
+    let full_ver = if loader_ver.starts_with(&format!("{}-", mc)) {
+        loader_ver.to_string()
+    } else {
+        format!("{}-{}", mc, loader_ver)
+    };
     version
         .game_dirs()
         .join(".forge")
-        .join(format!("forge-{}-installer.jar", version.loader_version()))
+        .join(format!("forge-{}-installer.jar", full_ver))
 }
 
 /// Reads `install_profile.json` and `version.json` directly from the

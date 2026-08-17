@@ -102,7 +102,12 @@ fn is_pre_installer_forge(mc: &str) -> bool {
 /// caller must HEAD-probe to pick the one that actually exists.
 fn legacy_installer_url_candidates<V: VersionInfo>(version: &V) -> (String, String) {
     let mc = version.minecraft_version();
-    let fg = version.loader_version();
+    let loader_ver = version.loader_version();
+    let fg = if loader_ver.starts_with(&format!("{}-", mc)) {
+        &loader_ver[(mc.len() + 1)..]
+    } else {
+        loader_ver
+    };
     let single = format!(
         "{}/net/minecraftforge/forge/{}-{}/forge-{}-{}-installer.jar",
         FORGE_MAVEN, mc, fg, mc, fg
@@ -138,10 +143,17 @@ async fn resolve_legacy_installer_url<V: VersionInfo>(version: &V) -> Option<Str
 /// Path to the cached installer JAR — same naming as modern Forge so
 /// both dispatchers find the same on-disk file.
 pub fn legacy_installer_path<V: VersionInfo>(version: &V) -> PathBuf {
+    let mc = version.minecraft_version();
+    let loader_ver = version.loader_version();
+    let full_ver = if loader_ver.starts_with(&format!("{}-", mc)) {
+        loader_ver.to_string()
+    } else {
+        format!("{}-{}", mc, loader_ver)
+    };
     version
         .game_dirs()
         .join(".forge")
-        .join(format!("forge-{}-installer.jar", version.loader_version()))
+        .join(format!("forge-{}-installer.jar", full_ver))
 }
 
 /// Downloads (or reuses) the legacy installer JAR for `version` and

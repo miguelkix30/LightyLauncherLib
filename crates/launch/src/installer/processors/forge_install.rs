@@ -33,10 +33,16 @@ type Result<T> = std::result::Result<T, QueryError>;
 /// Path to the per-installer marker file that records the SHA1 of the
 /// installer whose processors last ran successfully.
 fn processors_marker_path<V: VersionInfo>(version: &V, dot_dir: &str) -> PathBuf {
+    let mc = version.minecraft_version();
+    let loader_ver = version.loader_version();
+    let full_ver = if loader_ver.starts_with(&format!("{}-", mc)) {
+        loader_ver.to_string()
+    } else {
+        format!("{}-{}", mc, loader_ver)
+    };
     version.game_dirs().join(dot_dir).join(format!(
-        "processors-{}-{}.sha1",
-        version.minecraft_version(),
-        version.loader_version()
+        "processors-{}.sha1",
+        full_ver
     ))
 }
 
