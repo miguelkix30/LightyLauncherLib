@@ -88,6 +88,14 @@ fn push_fastmcmirror(urls: &mut Vec<String>, base: &str, path: &str) {
     }
 }
 
+/// Builds a PrismLauncher metadata URL for a package/version pair.
+///
+/// PrismLauncher stores loader metadata as per-package JSON files under
+/// `https://meta.prismlauncher.org/v1/{uid}/{version}.json`.
+pub fn prism_meta_url(package_uid: &str, version: &str) -> String {
+    format!("https://meta.prismlauncher.org/v1/{}/{}.json", package_uid, version)
+}
+
 pub fn build_fallback_urls(original: &str) -> Vec<String> {
     let mut urls = vec![original.to_string()];
 
